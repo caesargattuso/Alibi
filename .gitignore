@@ -1,0 +1,45 @@
+# IDE
+.idea/
+.vscode/
+*.sw?
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (root level — frontend has its own)
+node_modules/
+package-lock.json
+package.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build
+dist/
+build/
+
+# Uploads
+uploads/
+
+# Claude
+.claude/
+
+# Logs
+*.log
+logs/
