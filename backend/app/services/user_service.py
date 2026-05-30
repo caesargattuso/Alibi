@@ -60,3 +60,12 @@ class UserService:
             user.preferences = data.preferences
         await self.db.flush()
         return user
+
+    async def change_password(self, user_id: int, old_password: str, new_password: str) -> None:
+        user = await self.db.get(User, user_id)
+        if not user:
+            raise NotFoundError("用户")
+        if not verify_password(old_password, user.password_hash):
+            raise ValidationError("旧密码错误", "old_password")
+        user.password_hash = hash_password(new_password)
+        await self.db.flush()

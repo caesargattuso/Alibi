@@ -15,4 +15,6 @@ export const authService = {
 export const userService = {
   getMe: () => api.get<ApiResponse<User>>("/users/me"),
   updateMe: (data: Partial<User>) => api.put<ApiResponse<User>>("/users/me", data),
+  changePassword: (data: { old_password: string; new_password: string }) =>
+    api.put<ApiResponse<{ message: string }>>("/users/me/password", data),
 };

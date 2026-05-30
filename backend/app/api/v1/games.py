@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -64,3 +64,30 @@ async def end_game(
     svc = GameService(db)
     session = await svc.end_game(session_id, user.id, reason)
     return {"code": 200, "data": GameOut.model_validate(session).model_dump()}
+
+
+@router.get("", response_model=dict)
+async def list_games(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1, le=100),
+    status: str | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    svc = GameService(db)
+    result = await svc.list_user_games(user.id, page, per_page, status)
+    return {"code": 200, "data": result}
+
+
+@router.get("/{session_id}/messages", response_model=dict)
+async def get_messages(
+    session_id: int,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    type: str | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    svc = GameService(db)
+    result = await svc.get_dialog_history_paginated(session_id, user.id, page, per_page, type)
+    return {"code": 200, "data": result}

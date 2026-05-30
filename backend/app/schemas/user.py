@@ -40,3 +40,8 @@ class TokenOut(BaseModel):
     access_token: str
     refresh_token: str
     expires_in: int
+
+
+class PasswordChange(BaseModel):
+    old_password: str = Field(min_length=6)
+    new_password: str = Field(min_length=6)

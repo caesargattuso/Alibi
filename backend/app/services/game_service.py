@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, ForbiddenError
@@ -149,3 +149,77 @@ class GameService:
                     "affection": 0,
                 }
         return states
+
+    async def list_user_games(self, user_id: int, page: int, per_page: int, status: str | None) -> dict:
+        offset = (page - 1) * per_page
+
+        base_stmt = select(GameSession).where(GameSession.user_id == user_id)
+        if status:
+            base_stmt = base_stmt.where(GameSession.status == status)
+
+        count_stmt = select(func.count()).select_from(base_stmt.subquery())
+        total = (await self.db.execute(count_stmt)).scalar() or 0
+
+        stmt = (
+            base_stmt
+            .order_by(GameSession.created_at.desc())
+            .offset(offset)
+            .limit(per_page)
+        )
+        result = await self.db.execute(stmt)
+        sessions = result.scalars().all()
+
+        items = []
+        for session in sessions:
+            script = await self.db.get(Script, session.script_id)
+            items.append({
+                "id": session.id,
+                "script_id": session.script_id,
+                "script_title": script.title if script else "未知剧本",
+                "script_cover": script.cover_image if script else None,
+                "player_name": session.player_name,
+                "status": session.status,
+                "current_ending": session.current_ending,
+                "game_phase": session.game_phase,
+                "game_time": session.game_time,
+                "created_at": session.created_at.isoformat() if session.created_at else None,
+                "completed_at": session.completed_at.isoformat() if session.completed_at else None,
+            })
+
+        return {"items": items, "total": total, "page": page, "per_page": per_page}
+
+    async def get_dialog_history_paginated(
+        self, session_id: int, user_id: int, page: int, per_page: int, log_type: str | None
+    ) -> dict:
+        session = await self.get_game(session_id, user_id)
+        offset = (page - 1) * per_page
+
+        base_stmt = select(DialogLog).where(DialogLog.session_id == session.id)
+        if log_type:
+            base_stmt = base_stmt.where(DialogLog.type == log_type)
+
+        count_stmt = select(func.count()).select_from(base_stmt.subquery())
+        total = (await self.db.execute(count_stmt)).scalar() or 0
+
+        stmt = (
+            base_stmt
+            .order_by(DialogLog.created_at.asc())
+            .offset(offset)
+            .limit(per_page)
+        )
+        result = await self.db.execute(stmt)
+        logs = result.scalars().all()
+
+        items = [
+            {
+                "id": log.id,
+                "type": log.type,
+                "content": log.content,
+                "metadata": log.metadata,
+                "player_input": log.player_input,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ]
+
+        return {"items": items, "total": total, "page": page, "per_page": per_page}
