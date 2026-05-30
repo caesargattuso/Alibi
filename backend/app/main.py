@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.exceptions import AppException
-from app.api.v1 import auth, users, scripts, games
+from app.api.v1 import auth, users, scripts, games, scenes, characters
 
 
 @asynccontextmanager
@@ -45,3 +45,5 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(scripts.router, prefix="/api/v1")
 app.include_router(games.router, prefix="/api/v1")
+app.include_router(scenes.router, prefix="/api/v1")
+app.include_router(characters.router, prefix="/api/v1")
