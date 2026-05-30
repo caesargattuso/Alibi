@@ -11,5 +11,4 @@ COPY . .
 
 RUN mkdir -p /app/uploads
 
-# Run migrations then start server
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+ENTRYPOINT ["sh", "entrypoint.sh"]
