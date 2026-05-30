@@ -13,11 +13,14 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # AI
-    CLAUDE_API_KEY: str = ""
-    CLAUDE_MODEL: str = "claude-sonnet-4-6"
-    CLAUDE_MODEL_CRITICAL: str = "claude-opus-4-7"
-    CLAUDE_MAX_TOKENS: int = 4096
+    # AI - SiliconFlow (OpenAI compatible)
+    SILICONFLOW_API_KEY: str = ""
+    SILICONFLOW_BASE_URL: str = "https://api.siliconflow.cn/v1"
+    SILICONFLOW_MODEL: str = "deepseek-ai/DeepSeek-V4-Pro"
+    AI_MAX_TOKENS: int = 4096
+    AI_TIMEOUT: int = 60
+    AI_MAX_RETRIES: int = 3
+    AI_MAX_CONCURRENCY: int = 10
 
     # JWT
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60

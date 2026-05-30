@@ -1,113 +1,130 @@
 import asyncio
 import json
 
-from anthropic import AsyncAnthropic
-from sqlalchemy.ext.asyncio import AsyncSession
+from openai import AsyncOpenAI
 
 from app.core.config import settings
 from app.core.exceptions import AIServiceError
 
 STORY_TOOLS = [
     {
-        "name": "generate_story_response",
-        "description": "生成剧情回复，包含叙事文本、角色对话、选项和游戏指令",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "narration": {
-                    "type": "string",
-                    "description": "场景描写和剧情叙述，300-500字，第二人称",
-                },
-                "dialogs": {
-                    "type": "array",
-                    "items": {
+        "type": "function",
+        "function": {
+            "name": "generate_story_response",
+            "description": "生成互动小说的剧情响应",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "narration": {
+                        "type": "string",
+                        "description": "场景描写和剧情叙述，300-500字，第二人称",
+                    },
+                    "dialogs": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "speaker": {"type": "string", "description": "角色名"},
+                                "text": {"type": "string", "description": "对话内容"},
+                                "emotion": {
+                                    "type": "string",
+                                    "enum": ["neutral", "happy", "sad", "angry", "worried", "scared"],
+                                    "description": "情绪",
+                                },
+                            },
+                            "required": ["speaker", "text", "emotion"],
+                        },
+                        "description": "角色对话列表",
+                    },
+                    "choices": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "description": "选项ID，如c1,c2"},
+                                "text": {"type": "string", "description": "选项文本"},
+                                "is_custom": {"type": "boolean", "description": "是否为自由行动选项"},
+                            },
+                            "required": ["id", "text", "is_custom"],
+                        },
+                        "description": "2-4个选项，最后一个为自由行动",
+                    },
+                    "scene_change": {
                         "type": "object",
                         "properties": {
-                            "speaker": {"type": "string"},
-                            "text": {"type": "string"},
-                            "emotion": {"type": "string", "enum": ["neutral", "happy", "sad", "angry", "worried", "scared"]},
+                            "to_scene_id": {"type": "string", "description": "目标场景key"},
+                            "transition": {"type": "string", "description": "过渡效果：fade/slide/instant"},
                         },
-                        "required": ["speaker", "text"],
+                        "nullable": True,
+                        "description": "场景切换，无则null",
                     },
-                },
-                "choices": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string"},
-                            "text": {"type": "string"},
-                            "is_custom": {"type": "boolean", "default": False},
+                    "stat_changes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "target": {"type": "string", "enum": ["player", "npc"]},
+                                "target_id": {"type": "string", "description": "目标ID"},
+                                "stat": {"type": "string", "description": "属性名"},
+                                "change": {"type": "number", "description": "变化值，正为增负为减"},
+                            },
+                            "required": ["target", "target_id", "stat", "change"],
                         },
-                        "required": ["id", "text"],
+                        "description": "属性变化列表",
                     },
-                    "description": "2-4个选项，最后一个为自由行动",
-                },
-                "scene_change": {
-                    "type": "object",
-                    "properties": {
-                        "to_scene_id": {"type": "string"},
-                        "transition": {"type": "string", "enum": ["fade", "slide", "warp"]},
-                    },
-                },
-                "character_movements": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "character_id": {"type": "string"},
-                            "action": {"type": "string"},
-                            "position": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}},
+                    "flags_set": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "flag": {"type": "string", "description": "标记名"},
+                                "value": {"type": "boolean", "description": "标记值"},
+                            },
+                            "required": ["flag", "value"],
                         },
+                        "description": "标记设置列表",
+                    },
+                    "is_game_over": {
+                        "type": "boolean",
+                        "description": "游戏是否结束",
+                    },
+                    "ending": {
+                        "type": "string",
+                        "nullable": True,
+                        "description": "结局名称，is_game_over为true时填写",
                     },
                 },
-                "stat_changes": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "target": {"type": "string", "enum": ["player", "npc"]},
-                            "target_id": {"type": "string"},
-                            "stat": {"type": "string"},
-                            "change": {"type": "number"},
-                        },
-                    },
-                },
-                "flags_set": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "flag": {"type": "string"},
-                            "value": {"type": "boolean"},
-                        },
-                    },
-                },
-                "is_game_over": {"type": "boolean", "default": False},
-                "ending": {"type": "string"},
+                "required": [
+                    "narration", "dialogs", "choices", "scene_change",
+                    "stat_changes", "flags_set", "is_game_over", "ending",
+                ],
             },
-            "required": ["narration", "choices"],
         },
     }
 ]
 
-SYSTEM_PROMPT = """你是一个专业的互动小说游戏导演。
+SYSTEM_PROMPT = """你是一个专业的互动小说游戏导演，负责创造引人入胜的互动故事体验。
 
-规则：
+核心规则：
 1. 以第二人称"你"进行叙述
 2. 场景描写要生动，有画面感，300-500字
-3. 对话要符合角色人设
+3. 对话要符合角色人设，每个角色有独特的说话方式
 4. 在关键节点提供2-4个明确选项，最后一个选项为"自由行动"
-5. 恐怖场景描写要具体、冷静且有冲击力
-6. 保持角色人设一致性
-7. 非上帝视角，严格遵守角色视角
-8. 必须使用 generate_story_response 工具返回结果"""
+5. 保持角色人设一致性，NPC要有自己的动机和秘密
+6. 非上帝视角，严格遵守角色视角
+7. 重视玩家的选择，让选择产生后果
+8. 适时推进剧情，但给玩家探索空间
+
+请调用 generate_story_response 函数来生成你的回复。"""
 
 
 class AIService:
     def __init__(self):
-        self.client = AsyncAnthropic(api_key=settings.CLAUDE_API_KEY)
-        self.semaphore = asyncio.Semaphore(10)
+        self.client = AsyncOpenAI(
+            api_key=settings.SILICONFLOW_API_KEY,
+            base_url=settings.SILICONFLOW_BASE_URL,
+        )
+        self.semaphore = asyncio.Semaphore(settings.AI_MAX_CONCURRENCY)
 
     async def generate_story(self, session, player_input: str, history: list[dict]) -> dict:
         player_input = self._sanitize_input(player_input[:500])
@@ -116,41 +133,56 @@ class AIService:
         async with self.semaphore:
             try:
                 response = await self._call_with_retry(
-                    model=settings.CLAUDE_MODEL,
-                    max_tokens=settings.CLAUDE_MAX_TOKENS,
+                    model=settings.SILICONFLOW_MODEL,
+                    max_tokens=settings.AI_MAX_TOKENS,
                     temperature=0.8,
-                    system=SYSTEM_PROMPT,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
                     tools=STORY_TOOLS,
-                    messages=[{"role": "user", "content": prompt}],
+                    tool_choice={"type": "function", "function": {"name": "generate_story_response"}},
                 )
                 return self._parse_tool_response(response)
             except AIServiceError:
                 return self._get_fallback_response()
 
     async def _call_with_retry(self, **kwargs):
-        for attempt in range(3):
+        for attempt in range(settings.AI_MAX_RETRIES):
             try:
-                return await asyncio.wait_for(self.client.messages.create(**kwargs), timeout=30.0)
+                return await asyncio.wait_for(
+                    self.client.chat.completions.create(**kwargs),
+                    timeout=settings.AI_TIMEOUT,
+                )
             except asyncio.TimeoutError:
-                if attempt == 2:
+                if attempt == settings.AI_MAX_RETRIES - 1:
                     raise AIServiceError("AI响应超时")
             except Exception as e:
-                if attempt == 2:
+                if attempt == settings.AI_MAX_RETRIES - 1:
                     raise AIServiceError(f"AI调用失败: {e}")
                 await asyncio.sleep(attempt + 1)
 
     def _parse_tool_response(self, response) -> dict:
-        for block in response.content:
-            if block.type == "tool_use" and block.name == "generate_story_response":
-                return block.input
-        for block in response.content:
-            if block.type == "text":
-                return self._fallback_text_parse(block.text)
+        message = response.choices[0].message
+
+        # Prefer tool_use
+        if message.tool_calls and len(message.tool_calls) > 0:
+            tool_call = message.tool_calls[0]
+            try:
+                return json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError:
+                pass
+
+        # Fallback: try to parse content as JSON
+        content = message.content or ""
+        if content.strip():
+            return self._fallback_text_parse(content)
+
         return self._get_fallback_response()
 
     def _build_prompt(self, session, player_input: str, history: list[dict]) -> str:
-        script = session.script if hasattr(session, "script") else None
-        scene = session.current_scene if hasattr(session, "current_scene") else None
+        script = session.script if hasattr(session, "script") and session.script else None
+        scene = session.current_scene if hasattr(session, "current_scene") and session.current_scene else None
 
         script_info = ""
         if script:
@@ -167,7 +199,7 @@ class AIService:
 场景描述：{scene.description or ''}
 时间：{session.game_time or '第1天 上午'}"""
 
-        history_text = "\n".join(f"{h['type']}: {h['content']}" for h in history[-5:])
+        history_text = "\n".join(f"{h['type']}: {h['content']}" for h in history[-5:]) if history else "无"
 
         return f"""{script_info}
 
@@ -190,7 +222,7 @@ class AIService:
 {player_input}
 </user_input>
 
-请使用 generate_story_response 工具生成剧情回复。"""
+请调用 generate_story_response 函数生成剧情回复。"""
 
     def _sanitize_input(self, text: str) -> str:
         for tag in ["[SCENE:", "[CHAR:", "[EVENT:", "[STAT:", "[FLAG:", "</system>", "<system>"]:
@@ -203,7 +235,6 @@ class AIService:
             "dialogs": [],
             "choices": [{"id": "retry", "text": "再试一次"}, {"id": "wait", "text": "静静等待"}],
             "scene_change": None,
-            "character_movements": [],
             "stat_changes": [],
             "flags_set": [],
             "is_game_over": False,
@@ -211,17 +242,33 @@ class AIService:
         }
 
     def _fallback_text_parse(self, text: str) -> dict:
-        return {
-            "narration": text,
-            "dialogs": [],
-            "choices": [{"id": "free", "text": "自由行动", "is_custom": True}],
-            "scene_change": None,
-            "character_movements": [],
-            "stat_changes": [],
-            "flags_set": [],
-            "is_game_over": False,
-            "ending": None,
-        }
+        stripped = text.strip()
+        if stripped.startswith("```"):
+            lines = stripped.split("\n")
+            lines = [l for l in lines if not l.startswith("```")]
+            stripped = "\n".join(lines).strip()
+        try:
+            result = json.loads(stripped)
+            defaults = {
+                "dialogs": [], "choices": [{"id": "free", "text": "自由行动", "is_custom": True}],
+                "scene_change": None, "stat_changes": [], "flags_set": [],
+                "is_game_over": False, "ending": None,
+            }
+            for key, val in defaults.items():
+                if key not in result:
+                    result[key] = val
+            return result
+        except json.JSONDecodeError:
+            return {
+                "narration": stripped,
+                "dialogs": [],
+                "choices": [{"id": "free", "text": "自由行动", "is_custom": True}],
+                "scene_change": None,
+                "stat_changes": [],
+                "flags_set": [],
+                "is_game_over": False,
+                "ending": None,
+            }
 
 
 ai_service = AIService()

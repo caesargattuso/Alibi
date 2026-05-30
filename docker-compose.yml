@@ -2,16 +2,21 @@ version: "3.8"
 
 services:
   api:
-    build: .
+    build: ./backend
     ports: ["8000:8000"]
-    env_file: .env
+    env_file: ./backend/.env
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/ai_game
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       db:
         condition: service_healthy
-    volumes: ["./uploads:/app/uploads"]
+    volumes: ["./backend/uploads:/app/uploads"]
+
+  web:
+    build: ./frontend
+    ports: ["3000:3000"]
+    depends_on: [api]
 
   db:
     image: postgres:16-alpine
