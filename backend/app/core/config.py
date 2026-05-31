@@ -33,8 +33,15 @@ class Settings(BaseSettings):
     RATE_LIMIT_AI: str = "30/minute"
 
     # 文件存储
-    STORAGE_TYPE: str = "local"
+    STORAGE_TYPE: str = "local"  # "local" or "minio"
     UPLOAD_DIR: str = "./uploads"
+
+    # MinIO
+    MINIO_ENDPOINT: str = "minio:9000"
+    MINIO_ACCESS_KEY: str = ""
+    MINIO_SECRET_KEY: str = ""
+    MINIO_BUCKET: str = "alibi-game-assets"
+    MINIO_SECURE: bool = False
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

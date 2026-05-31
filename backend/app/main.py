@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.exceptions import AppException
-from app.api.v1 import auth, users, scripts, games, scenes, characters, ws, upload, achievements, leaderboards
+from app.api.v1 import auth, users, scripts, games, scenes, characters, ws, upload, achievements, leaderboards, storage
 from app.middleware.rate_limit import RateLimitMiddleware
 
 
@@ -58,6 +58,7 @@ app.include_router(ws.router)
 app.include_router(upload.router, prefix="/api/v1")
 app.include_router(achievements.router, prefix="/api/v1")
 app.include_router(leaderboards.router, prefix="/api/v1")
+app.include_router(storage.router, prefix="/api/v1")
 
 # 静态文件服务（上传文件）
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")

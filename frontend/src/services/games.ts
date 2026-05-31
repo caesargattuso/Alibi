@@ -24,7 +24,7 @@ export interface DialogItem {
 }
 
 export interface SSEEvent {
-  event: "narration_chunk" | "complete" | "error" | string;
+  event: "narration_chunk" | "dialog_chunk" | "complete" | "error" | string;
   data: unknown;
 }
 

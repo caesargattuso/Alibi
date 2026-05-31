@@ -1,9 +1,11 @@
 """Seed database with initial data."""
 import asyncio
 import json
+from pathlib import Path
 from sqlalchemy import select
 from app.db.session import AsyncSessionLocal
 from app.models.models import User, Script, Scene, Character, Achievement
+from app.services.storage import get_storage
 
 
 async def seed():
@@ -39,7 +41,7 @@ async def seed():
             genre="悬疑推理",
             difficulty="hard",
             author_id=user.id,
-            cover_image="https://images.unsplash.com/photo-1558618666-fcd25c85f82e?w=400",
+            cover_image="",  # Will be set after uploading
             setting={"era": "1920年代", "location": "英格兰乡间庄园", "atmosphere": "阴森恐怖、疑云密布"},
             rules={"investigation_points": 10, "trust_system": True},
             endings={"good": "找出真凶，拯救所有人", "neutral": "找到部分真相但有人牺牲", "bad": "未能找出凶手"},
@@ -48,6 +50,14 @@ async def seed():
         )
         session.add(script)
         await session.flush()
+
+        # Upload cover image to storage
+        storage = get_storage()
+        cover_file = Path("./uploads/covers/misty-manor.png")
+        if cover_file.exists():
+            cover_url = await storage.save(f"scripts/{script.id}/cover.png", cover_file.read_bytes(), "image/png")
+            script.cover_image = cover_url
+            print(f"Cover uploaded: {cover_url}")
 
         # Create scenes
         scenes_data = [

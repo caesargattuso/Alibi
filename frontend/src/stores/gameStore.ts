@@ -41,6 +41,7 @@ interface GameState {
 
   addPlayerTurn: (input: string) => string;
   appendNarration: (turnId: string, text: string) => void;
+  appendDialogText: (turnId: string, speaker: string, text: string) => void;
   completeTurn: (turnId: string, data: {
     dialogs: DialogItem[];
     choices: ChoiceItem[];
@@ -99,6 +100,22 @@ export const useGameStore = create<GameState>((set) => ({
     }));
   },
 
+  appendDialogText: (turnId, speaker, text) => {
+    set((state) => ({
+      turns: state.turns.map((t) => {
+        if (t.id !== turnId) return t;
+        const dialogs = [...t.dialogs];
+        const last = dialogs[dialogs.length - 1];
+        if (last && last.speaker === speaker) {
+          dialogs[dialogs.length - 1] = { ...last, text: last.text + text };
+        } else {
+          dialogs.push({ speaker, text, emotion: "neutral" });
+        }
+        return { ...t, dialogs };
+      }),
+    }));
+  },
+
   completeTurn: (turnId, data) => {
     set((state) => ({
       turns: state.turns.map((t) =>
@@ -106,7 +123,8 @@ export const useGameStore = create<GameState>((set) => ({
           ? {
               ...t,
               narration: data.narration ?? t.narration,
-              dialogs: data.dialogs ?? [],
+              // Only use complete dialogs if streaming didn't produce any
+              dialogs: t.dialogs.length > 0 ? t.dialogs : (data.dialogs ?? []),
               choices: data.choices ?? [],
               sceneChange: data.sceneChange ?? null,
               statChanges: data.statChanges ?? [],

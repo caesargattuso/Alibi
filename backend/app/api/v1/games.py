@@ -151,7 +151,16 @@ async def generate_scene_image(
     if not image_url:
         raise HTTPException(500, "图片生成失败")
 
-    return {"code": 200, "data": {"url": image_url, "prompt": prompt}}
+    # Download and store in object storage
+    from app.services.file_service import file_service
+    stored_url = await file_service.store_ai_image(
+        script_id=session.script_id,
+        session_id=session_id,
+        image_url=image_url,
+        image_type="scene",
+    )
+
+    return {"code": 200, "data": {"url": stored_url, "prompt": prompt}}
 
 
 @router.post("/{session_id}/pause", response_model=dict)

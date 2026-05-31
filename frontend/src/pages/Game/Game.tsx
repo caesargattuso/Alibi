@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button, Input, Spin } from "antd";
 import { gameService } from "../../services/games";
 import { useGameStore } from "../../stores/gameStore";
-import type { ChoiceItem, DialogItem, StatChange } from "../../stores/gameStore";
+import type { ChoiceItem, StatChange } from "../../stores/gameStore";
 
 export default function Game() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -31,15 +31,46 @@ export default function Game() {
       setSceneName((session.game_time as string) || "第1天 上午");
     }).catch(() => navigate("/login"));
 
-    // Load dialog history
-    gameService.getHistory(Number(sessionId)).then((resp: any) => {
+    // Load dialog history — if empty, auto-trigger opening narration
+    gameService.getHistory(Number(sessionId)).then(async (resp: any) => {
       const items = (resp.data?.data || []) as Array<{
         player_input: string | null;
         content: string;
-        meta_data: { choices?: ChoiceItem[]; dialogs?: DialogItem[] } | null;
+        meta_data: { choices?: ChoiceItem[] } | null;
         created_at: string | null;
       }>;
-      if (items.length > 0) loadHistory(items);
+      if (items.length > 0) {
+        loadHistory(items);
+      } else {
+        // No history yet — auto-trigger the opening narration via streaming
+        const turnId = addPlayerTurn("开始游戏");
+        try {
+          for await (const event of gameService.sendActionStream(Number(sessionId), { message: "开始游戏" })) {
+            if (event.event === "narration_chunk") {
+              const data = event.data as { text: string };
+              appendNarration(turnId, data.text || "");
+            } else if (event.event === "complete") {
+              const data = event.data as Record<string, unknown>;
+              const response = {
+                narration: (data.narration as string) || "",
+                dialogs: [],
+                choices: (data.choices as ChoiceItem[]) || [],
+                sceneChange: (data.scene_change as { to_scene_id: string; transition: string } | null) || null,
+                statChanges: (data.stat_changes as StatChange[]) || [],
+              };
+              completeTurn(turnId, response);
+            }
+          }
+        } catch {
+          completeTurn(turnId, {
+            narration: "开局生成失败，请重试。",
+            dialogs: [],
+            choices: [{ id: "retry", text: "再试一次", is_custom: false }],
+            sceneChange: null,
+            statChanges: [],
+          });
+        }
+      }
     }).catch(() => {});
 
     return () => reset();
@@ -56,85 +87,54 @@ export default function Game() {
     setTimeout(() => setStatNotifications([]), 2500);
   }, []);
 
-  // Streaming action handler with typewriter effect
+  // Streaming action handler
   const handleAction = useCallback(async (input: string) => {
     if (!sessionId || isStreaming) return;
     const turnId = addPlayerTurn(input);
     setCustomInput("");
 
-    const chunkQueue: string[] = [];
-    let completeData: Record<string, unknown> | null = null;
-    let processing = true;
-
-    // Process chunks with typewriter effect
-    const processChunks = async () => {
-      while (processing || chunkQueue.length > 0) {
-        if (chunkQueue.length > 0) {
-          const chunk = chunkQueue.shift()!;
-          appendNarration(turnId, chunk);
-          // Delay between chunks for typing effect
-          await new Promise((resolve) => setTimeout(resolve, 30));
-        } else {
-          // Wait for more chunks
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-      }
-      // All chunks processed, now complete the turn
-      if (completeData) {
-        const data = completeData;
-        const response = {
-          narration: (data.narration as string) || "",
-          dialogs: (data.dialogs as DialogItem[]) || [],
-          choices: (data.choices as ChoiceItem[]) || [],
-          sceneChange: (data.scene_change as { to_scene_id: string; transition: string } | null) || null,
-          statChanges: (data.stat_changes as StatChange[]) || [],
-        };
-        completeTurn(turnId, response);
-
-        if (response.sceneChange) {
-          setSceneTransition(true);
-          setTimeout(() => setSceneTransition(false), 1200);
-        }
-        if (response.statChanges.length > 0) {
-          showStatNotification(response.statChanges);
-        }
-      }
-    };
-
-    // Start processing chunks
-    const processPromise = processChunks();
-
     try {
       for await (const event of gameService.sendActionStream(Number(sessionId), { message: input })) {
         if (event.event === "narration_chunk") {
           const data = event.data as { text: string };
-          chunkQueue.push(data.text || "");
+          appendNarration(turnId, data.text || "");
         } else if (event.event === "complete") {
-          completeData = event.data as Record<string, unknown>;
-          processing = false;
+          const data = event.data as Record<string, unknown>;
+          const response = {
+            narration: (data.narration as string) || "",
+            dialogs: [],
+            choices: (data.choices as ChoiceItem[]) || [],
+            sceneChange: (data.scene_change as { to_scene_id: string; transition: string } | null) || null,
+            statChanges: (data.stat_changes as StatChange[]) || [],
+          };
+          completeTurn(turnId, response);
+
+          if (response.sceneChange) {
+            setSceneTransition(true);
+            setTimeout(() => setSceneTransition(false), 1200);
+          }
+          if (response.statChanges.length > 0) {
+            showStatNotification(response.statChanges);
+          }
         } else if (event.event === "error") {
-          processing = false;
-          completeData = {
+          completeTurn(turnId, {
             narration: "连接出现问题，请重试...",
             dialogs: [],
             choices: [{ id: "retry", text: "再试一次", is_custom: false }],
-            scene_change: null,
-            stat_changes: [],
-          };
+            sceneChange: null,
+            statChanges: [],
+          });
         }
       }
     } catch {
-      processing = false;
-      completeData = {
+      completeTurn(turnId, {
         narration: "操作失败，请重试。",
         dialogs: [],
         choices: [{ id: "retry", text: "再试一次", is_custom: false }],
-        scene_change: null,
-        stat_changes: [],
-      };
+        sceneChange: null,
+        statChanges: [],
+      });
     }
-
-    await processPromise;
   }, [sessionId, isStreaming]);
 
   const lastTurn = turns[turns.length - 1];
@@ -229,7 +229,7 @@ export default function Game() {
                 fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap",
                 border: "1px solid rgba(255,107,157,0.1)",
               }}>
-                {turn.narration}
+                {turn.narration.replace(/\\n/g, "\n")}
                 {turn.isStreaming && (
                   <span className="typewriter-cursor" style={{
                     color: "#FF6B9D", fontWeight: 700,
@@ -238,30 +238,6 @@ export default function Game() {
                 )}
               </div>
             )}
-
-            {/* Dialogs */}
-            {turn.dialogs.map((d, i) => (
-              <div key={i} style={{
-                marginTop: 8, padding: "10px 16px", borderRadius: 10,
-                background: "rgba(99,110,114,0.7)", color: "#fff",
-                fontSize: 15,
-              }}>
-                <span style={{ color: "#ffeaa7", fontWeight: 600 }}>{d.speaker}</span>
-                {d.emotion && d.emotion !== "neutral" && (
-                  <span style={{
-                    marginLeft: 6, fontSize: 12, padding: "2px 6px", borderRadius: 4,
-                    background: d.emotion === "happy" ? "rgba(0,200,83,0.3)" :
-                      d.emotion === "sad" ? "rgba(255,82,82,0.3)" :
-                      d.emotion === "angry" ? "rgba(255,165,0,0.3)" :
-                      "rgba(116,185,255,0.3)",
-                    color: "#fff",
-                  }}>
-                    {d.emotion}
-                  </span>
-                )}
-                <div style={{ marginTop: 4 }}>{d.text}</div>
-              </div>
-            ))}
 
             {/* Streaming indicator */}
             {turn.isStreaming && !turn.narration && (
@@ -323,16 +299,6 @@ export default function Game() {
               发送
             </Button>
           </div>
-        </div>
-      )}
-
-      {/* Waiting for first chunk */}
-      {isStreaming && !lastTurn?.narration && (
-        <div style={{
-          position: "sticky", bottom: 60, textAlign: "center",
-          padding: 8, color: "#888", fontSize: 14, zIndex: 5,
-        }}>
-          <Spin size="small" /> 思考中...
         </div>
       )}
     </div>

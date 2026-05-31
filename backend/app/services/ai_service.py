@@ -151,10 +151,13 @@ class AIService:
     async def generate_story_stream(
         self, session, script, current_scene, player_input: str, history: list[dict]
     ) -> AsyncGenerator[tuple[str, dict], None]:
-        """Stream AI story response. Yields (event_type, data) tuples.
+        """Stream AI story response with real streaming from SiliconFlow.
+
+        Uses tool_calls streaming. We track the JSON buffer and extract narration
+        text in real-time by detecting when we're inside the "narration" value.
 
         Event types:
-        - ("narration_chunk", {"text": "..."}) — partial narration text
+        - ("narration_chunk", {"text": "..."}) — partial narration text (real-time)
         - ("complete", {...full AI response...}) — complete parsed response
         """
         player_input = self._sanitize_input(player_input[:500])
@@ -176,24 +179,67 @@ class AIService:
                 )
 
                 buffer = ""
+                # JSON stream state machine for real-time text extraction
+                state = "idle"
+                escaped = False
+                recent_chars = ""
+
                 async for chunk in stream:
                     if not chunk.choices:
                         continue
                     delta = chunk.choices[0].delta
-                    if delta.tool_calls and delta.tool_calls[0].function.arguments:
-                        buffer += delta.tool_calls[0].function.arguments
+
                     if delta.content:
                         buffer += delta.content
+                        yield ("narration_chunk", {"text": delta.content})
+
+                    if delta.tool_calls and len(delta.tool_calls) > 0:
+                        tc_delta = delta.tool_calls[0]
+                        if tc_delta.function and tc_delta.function.arguments:
+                            new_frag = tc_delta.function.arguments
+                            buffer += new_frag
+
+                            for char in new_frag:
+                                recent_chars += char
+                                if len(recent_chars) > 40:
+                                    recent_chars = recent_chars[-40:]
+
+                                if state == "idle":
+                                    if '"narration"' in recent_chars:
+                                        idx = recent_chars.rfind('"narration"')
+                                        after = recent_chars[idx + len('"narration"'):]
+                                        colon_pos = after.find(':')
+                                        if colon_pos != -1:
+                                            rest = after[colon_pos + 1:].lstrip()
+                                            if rest.startswith('"'):
+                                                state = "in_narration"
+                                                escaped = False
+
+                                elif state == "in_narration":
+                                    if escaped:
+                                        escaped = False
+                                        if char == 'n':
+                                            yield ("narration_chunk", {"text": "\n"})
+                                        elif char == 't':
+                                            yield ("narration_chunk", {"text": "\t"})
+                                        elif char == 'r':
+                                            yield ("narration_chunk", {"text": "\r"})
+                                        else:
+                                            yield ("narration_chunk", {"text": char})
+                                    elif char == '\\':
+                                        escaped = True
+                                    elif char == '"':
+                                        state = "idle"
+                                    else:
+                                        yield ("narration_chunk", {"text": char})
 
                 # Parse the complete response
                 parsed = None
                 if buffer:
                     try:
-                        # Try to find and parse JSON object
                         start = buffer.find("{")
                         if start != -1:
                             json_str = buffer[start:]
-                            # Try various suffixes to complete potentially truncated JSON
                             for suffix in ["", "}", "}}", '"}']:
                                 try:
                                     parsed = json.loads(json_str + suffix)
@@ -205,32 +251,13 @@ class AIService:
                         pass
 
                 if parsed and "narration" in parsed:
-                    # Simulate streaming by yielding narration in chunks
-                    narration = parsed["narration"]
-                    chunk_size = 10  # Smaller chunks for smoother effect
-                    for i in range(0, len(narration), chunk_size):
-                        chunk_text = narration[i:i + chunk_size]
-                        yield ("narration_chunk", {"text": chunk_text})
-                        # Small delay to create typing effect
-                        await asyncio.sleep(0.04)
                     yield ("complete", self._fill_defaults(parsed))
                 else:
-                    # Fallback
                     fallback = self._fallback_text_parse(buffer) if buffer.strip() else self._get_fallback_response()
-                    narration = fallback.get("narration", "")
-                    chunk_size = 10
-                    for i in range(0, len(narration), chunk_size):
-                        yield ("narration_chunk", {"text": narration[i:i + chunk_size]})
-                        await asyncio.sleep(0.04)
                     yield ("complete", fallback)
 
             except AIServiceError:
                 fallback = self._get_fallback_response()
-                narration = fallback.get("narration", "")
-                chunk_size = 10
-                for i in range(0, len(narration), chunk_size):
-                    yield ("narration_chunk", {"text": narration[i:i + chunk_size]})
-                    await asyncio.sleep(0.04)
                 yield ("complete", fallback)
 
     async def _call_stream_with_retry(self, **kwargs):
