@@ -62,14 +62,40 @@ function key(p: Point): string {
   return `${p.x},${p.y}`;
 }
 
+/**
+ * Find path using A* algorithm on a grid.
+ * @param start - Start position in pixel coordinates
+ * @param end - End position in pixel coordinates
+ * @param isWalkable - Function to check if a pixel coordinate is walkable
+ * @param gridWidth - Canvas width in pixels
+ * @param gridHeight - Canvas height in pixels
+ * @param cellSize - Size of each grid cell in pixels (default 32)
+ * @returns Array of points representing the path
+ */
 export function findPath(
   start: Point,
   end: Point,
   isWalkable: (x: number, y: number) => boolean,
   gridWidth: number,
   gridHeight: number,
+  cellSize: number = 32,
 ): Point[] {
-  if (!isWalkable(start.x, start.y) || !isWalkable(end.x, end.y)) return [];
+  // Convert pixel coordinates to grid coordinates
+  const startGrid = { x: Math.floor(start.x / cellSize), y: Math.floor(start.y / cellSize) };
+  const endGrid = { x: Math.floor(end.x / cellSize), y: Math.floor(end.y / cellSize) };
+
+  // Calculate grid dimensions
+  const cols = Math.ceil(gridWidth / cellSize);
+  const rows = Math.ceil(gridHeight / cellSize);
+
+  // Check if start and end are within bounds
+  if (startGrid.x < 0 || startGrid.x >= cols || startGrid.y < 0 || startGrid.y >= rows) return [];
+  if (endGrid.x < 0 || endGrid.x >= cols || endGrid.y < 0 || endGrid.y >= rows) return [];
+
+  // Check if start and end are walkable (using center of cell)
+  const startPixel = { x: startGrid.x * cellSize + cellSize / 2, y: startGrid.y * cellSize + cellSize / 2 };
+  const endPixel = { x: endGrid.x * cellSize + cellSize / 2, y: endGrid.y * cellSize + cellSize / 2 };
+  if (!isWalkable(startPixel.x, startPixel.y) || !isWalkable(endPixel.x, endPixel.y)) return [];
 
   interface Node {
     x: number;
@@ -83,20 +109,27 @@ export function findPath(
   const closed = new Set<string>();
   const gScores = new Map<string, number>();
 
-  const startNode: Node = { x: start.x, y: start.y, g: 0, f: heuristic(start, end), parent: null };
+  const startNode: Node = { x: startGrid.x, y: startGrid.y, g: 0, f: heuristic(startGrid, endGrid), parent: null };
   open.push(startNode);
-  gScores.set(key(start), 0);
+  gScores.set(key(startGrid), 0);
 
   while (open.size > 0) {
     const current = open.pop()!;
 
-    if (current.x === end.x && current.y === end.y) {
+    if (current.x === endGrid.x && current.y === endGrid.y) {
+      // Reconstruct path and convert back to pixel coordinates
       const path: Point[] = [];
       let node: Node | null = current;
       while (node) {
-        path.unshift({ x: node.x, y: node.y });
+        // Use center of cell for pixel coordinates
+        path.unshift({
+          x: node.x * cellSize + cellSize / 2,
+          y: node.y * cellSize + cellSize / 2,
+        });
         node = node.parent;
       }
+      // Add the actual end point for precision
+      path[path.length - 1] = { x: end.x, y: end.y };
       return path;
     }
 
@@ -108,18 +141,26 @@ export function findPath(
       const nx = current.x + dir.x;
       const ny = current.y + dir.y;
 
-      if (nx < 0 || ny < 0 || nx >= gridWidth || ny >= gridHeight) continue;
-      if (!isWalkable(nx, ny)) continue;
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
 
-      const nk = `${nx},${ny}`;
-      if (closed.has(nk)) continue;
+      // Check if the cell is walkable (using center of cell)
+      const cellPixelX = nx * cellSize + cellSize / 2;
+      const cellPixelY = ny * cellSize + cellSize / 2;
+      if (!isWalkable(cellPixelX, cellPixelY)) continue;
 
       // Diagonal movement requires both adjacent cells to be walkable
       if (dir.x !== 0 && dir.y !== 0) {
-        if (!isWalkable(current.x + dir.x, current.y) || !isWalkable(current.x, current.y + dir.y)) {
+        const adjPixelX1 = (current.x + dir.x) * cellSize + cellSize / 2;
+        const adjPixelY1 = current.y * cellSize + cellSize / 2;
+        const adjPixelX2 = current.x * cellSize + cellSize / 2;
+        const adjPixelY2 = (current.y + dir.y) * cellSize + cellSize / 2;
+        if (!isWalkable(adjPixelX1, adjPixelY1) || !isWalkable(adjPixelX2, adjPixelY2)) {
           continue;
         }
       }
+
+      const nk = `${nx},${ny}`;
+      if (closed.has(nk)) continue;
 
       const moveCost = dir.x !== 0 && dir.y !== 0 ? 1.414 : 1;
       const ng = current.g + moveCost;
@@ -127,7 +168,7 @@ export function findPath(
 
       if (prevG === undefined || ng < prevG) {
         gScores.set(nk, ng);
-        const h = heuristic({ x: nx, y: ny }, end);
+        const h = heuristic({ x: nx, y: ny }, endGrid);
         open.push({ x: nx, y: ny, g: ng, f: ng + h, parent: current });
       }
     }
