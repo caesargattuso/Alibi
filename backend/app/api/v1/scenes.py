@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
 from app.models.models import User
-from app.schemas.scene import InteractRequest, SceneData
+from app.schemas.scene import InteractRequest, SceneData, NPCDialogueRequest
 from app.services.scene_service import SceneService
 
 router = APIRouter(prefix="/scenes", tags=["scenes"])
@@ -52,6 +52,21 @@ async def execute_interaction(
     svc = SceneService(db)
     result = await svc.execute_interaction(
         scene_id, request.session_id, request.interactable_id, request.action_id
+    )
+    return {"code": 200, "data": result}
+
+
+@router.post("/{scene_id}/npc-dialogue")
+async def npc_dialogue(
+    scene_id: int,
+    request: NPCDialogueRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """Handle NPC dialogue with AI-generated responses."""
+    svc = SceneService(db)
+    result = await svc.npc_dialogue(
+        scene_id, request.session_id, request.npc_id, request.player_message, request.dialogue_history
     )
     return {"code": 200, "data": result}
 

@@ -62,7 +62,18 @@ class AITrigger(BaseModel):
     context: str
 
 
-class InteractResult(BaseModel):
+class NPCDialogueRequest(BaseModel):
+    session_id: int
+    npc_id: str
+    player_message: str
+    dialogue_history: list[dict[str, str]] = []
+
+
+class NPCDialogueResponse(BaseModel):
+    text: str
+    emotion: str = "neutral"
+    clues_revealed: list[str] = []
+    trust_change: int = 0
     success: bool
     message: str
     effects: list[InteractEffect]

@@ -181,5 +181,82 @@ class SceneService:
         }
         return messages.get(action_id, f"你对{interactable['name']}执行了{action_id}")
 
+    async def npc_dialogue(
+        self,
+        scene_id: int,
+        session_id: int,
+        npc_id: str,
+        player_message: str,
+        dialogue_history: list[dict],
+    ) -> dict:
+        """Handle NPC dialogue with AI-generated responses."""
+        from app.services.ai_service import ai_service
+        from app.models.models import GameSession, Character
+        from sqlalchemy import select as sa_select
+
+        # Get game session
+        game_session = await self.db.get(GameSession, session_id)
+        if not game_session:
+            raise NotFoundError("游戏会话")
+
+        # Get NPC character data
+        stmt = sa_select(Character).where(
+            Character.script_id == game_session.script_id,
+            Character.character_key == npc_id,
+        )
+        result = await self.db.execute(stmt)
+        npc = result.scalar_one_or_none()
+
+        if not npc:
+            return {
+                "text": "...（对方似乎没听见你在说什么）",
+                "emotion": "neutral",
+                "clues_revealed": [],
+                "trust_change": 0,
+            }
+
+        # Build NPC context
+        npc_context = f"""你是一个互动小说游戏中的NPC角色。
+
+角色信息：
+- 姓名：{npc.name}
+- 外观：{npc.appearance or '未知'}
+- 性格：{', '.join(npc.personality.get('traits', [])) if npc.personality else '未知'}
+- 背景：{npc.background or '未知'}
+- 对话风格：{npc.dialogue_style or '普通'}
+
+当前玩家对你说：{player_message}
+
+请根据角色设定回复。回复要符合角色性格，保持角色视角。"""
+
+        # Call AI service for response
+        try:
+            response = await ai_service.client.chat.completions.create(
+                model=ai_service.model if hasattr(ai_service, 'model') else "gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": npc_context},
+                    {"role": "user", "content": player_message},
+                ],
+                max_tokens=200,
+                temperature=0.8,
+            )
+
+            npc_text = response.choices[0].message.content or "..."
+
+            return {
+                "text": npc_text,
+                "emotion": "neutral",
+                "clues_revealed": [],
+                "trust_change": 0,
+            }
+        except Exception as e:
+            # Fallback response
+            return {
+                "text": f"{npc.name}看了你一眼，说道：\"这件事...我暂时不能告诉你。\"",
+                "emotion": "suspicious",
+                "clues_revealed": [],
+                "trust_change": 0,
+            }
+
 
 scene_service = SceneService
