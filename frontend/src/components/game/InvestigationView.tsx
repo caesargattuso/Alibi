@@ -44,7 +44,7 @@ export function InvestigationView({
       setInteractables(interactablesRes.data.data.interactables);
 
       // Set initial player position to default spawn point
-      const spawnPoints = mapRes.data.data.spawn_points;
+      const spawnPoints = mapRes.data.data.spawn_points || [];
       const defaultSpawn = spawnPoints.find((sp) => sp.is_default);
       if (defaultSpawn) {
         setPlayerPosition({ x: defaultSpawn.position[0], y: defaultSpawn.position[1] });
