@@ -26,15 +26,13 @@ export function SceneMap({
 }: SceneMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [currentPath, setCurrentPath] = useState<Point[]>([]);
-  const [isMoving, setIsMoving] = useState(false);
-  const [playerPosState, setPlayerPosState] = useState<Point>(playerPosition);
-  const animationRef = useRef<number>(0);
+  const isMovingRef = useRef(false);
   const playerPosRef = useRef<Point>(playerPosition);
+  const animationRef = useRef<number>(0);
 
-  // Update player position ref when prop changes
+  // Update refs when props change
   useEffect(() => {
     playerPosRef.current = playerPosition;
-    setPlayerPosState(playerPosition);
   }, [playerPosition]);
 
   const draw = useCallback(() => {
@@ -126,7 +124,7 @@ export function SceneMap({
     }
 
     // Player character
-    const player = playerPosState;
+    const player = playerPosRef.current;
     ctx.beginPath();
     ctx.arc(player.x, player.y, 12, 0, Math.PI * 2);
     ctx.fillStyle = "#FF6B9D";
@@ -143,7 +141,7 @@ export function SceneMap({
     ctx.closePath();
     ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
     ctx.fill();
-  }, [mapData, interactables, currentPath, pathColor, playerPosState]);
+  }, [mapData, interactables, currentPath, pathColor]);
 
   useEffect(() => {
     draw();
@@ -151,7 +149,7 @@ export function SceneMap({
 
   // Animation loop for player movement
   useEffect(() => {
-    if (!isMoving || currentPath.length < 2) return;
+    if (!isMovingRef.current || currentPath.length < 2) return;
 
     let pathIndex = 0;
     const speed = 200; // pixels per second
@@ -162,7 +160,7 @@ export function SceneMap({
       lastTime = time;
 
       if (pathIndex >= currentPath.length - 1) {
-        setIsMoving(false);
+        isMovingRef.current = false;
         setCurrentPath([]);
         return;
       }
@@ -178,7 +176,7 @@ export function SceneMap({
         playerPosRef.current = { ...target };
         pathIndex++;
         if (pathIndex >= currentPath.length - 1) {
-          setIsMoving(false);
+          isMovingRef.current = false;
           setCurrentPath([]);
           onPlayerMove?.(target.x, target.y);
           return;
@@ -191,7 +189,7 @@ export function SceneMap({
         };
       }
 
-      setPlayerPosState({ ...playerPosRef.current });
+      draw();
       animationRef.current = requestAnimationFrame(animate);
     };
 
@@ -202,10 +200,10 @@ export function SceneMap({
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isMoving, currentPath, draw, onPlayerMove]);
+  }, [currentPath, draw, onPlayerMove]);
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isMoving) return;
+    if (isMovingRef.current) return;
 
     const canvas = canvasRef.current;
     if (!canvas || !mapData) return;
@@ -242,8 +240,8 @@ export function SceneMap({
 
     const path = findPath(start, end, isWalkable, mapData.width, mapData.height);
     if (path.length > 1) {
+      isMovingRef.current = true;
       setCurrentPath(path);
-      setIsMoving(true);
     }
   };
 
