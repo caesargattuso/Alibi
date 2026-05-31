@@ -27,12 +27,14 @@ export function SceneMap({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [currentPath, setCurrentPath] = useState<Point[]>([]);
   const [isMoving, setIsMoving] = useState(false);
+  const [playerPosState, setPlayerPosState] = useState<Point>(playerPosition);
   const animationRef = useRef<number>(0);
   const playerPosRef = useRef<Point>(playerPosition);
 
   // Update player position ref when prop changes
   useEffect(() => {
     playerPosRef.current = playerPosition;
+    setPlayerPosState(playerPosition);
   }, [playerPosition]);
 
   const draw = useCallback(() => {
@@ -42,8 +44,11 @@ export function SceneMap({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    canvas.width = mapData.width;
-    canvas.height = mapData.height;
+    // Only set canvas dimensions if they changed
+    if (canvas.width !== mapData.width || canvas.height !== mapData.height) {
+      canvas.width = mapData.width;
+      canvas.height = mapData.height;
+    }
 
     // Background
     ctx.fillStyle = "#1a1a2e";
@@ -121,7 +126,7 @@ export function SceneMap({
     }
 
     // Player character
-    const player = playerPosRef.current;
+    const player = playerPosState;
     ctx.beginPath();
     ctx.arc(player.x, player.y, 12, 0, Math.PI * 2);
     ctx.fillStyle = "#FF6B9D";
@@ -138,7 +143,7 @@ export function SceneMap({
     ctx.closePath();
     ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
     ctx.fill();
-  }, [mapData, interactables, currentPath, pathColor]);
+  }, [mapData, interactables, currentPath, pathColor, playerPosState]);
 
   useEffect(() => {
     draw();
@@ -186,7 +191,7 @@ export function SceneMap({
         };
       }
 
-      draw();
+      setPlayerPosState({ ...playerPosRef.current });
       animationRef.current = requestAnimationFrame(animate);
     };
 
