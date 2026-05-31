@@ -151,13 +151,19 @@ export default function Game() {
       // Free action -> open investigation view
       if (!sessionId) return;
       gameService.get(Number(sessionId)).then((resp: any) => {
+        console.log("Game session response:", resp.data);
         const sessionData = resp.data?.data as unknown as Record<string, unknown>;
         const sceneId = sessionData?.current_scene_id as number;
+        console.log("Current scene ID:", sceneId);
         if (sceneId) {
           setCurrentSceneId(sceneId);
           setIsInvestigating(true);
+        } else {
+          console.error("No current scene ID found in session");
         }
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error("Failed to get game session:", err);
+      });
     } else {
       handleAction(choice.text);
     }
