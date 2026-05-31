@@ -125,4 +125,17 @@ export const sceneService = {
 
   interact: (sceneId: number, data: { session_id: number; interactable_id: string; action_id: string }) =>
     api.post<ApiResponse<InteractResult>>(`/scenes/${sceneId}/interact`, data),
+
+  npcDialogue: (sceneId: number, data: {
+    session_id: number;
+    npc_id: string;
+    player_message: string;
+    dialogue_history: Array<{ speaker: string; text: string }>;
+  }) =>
+    api.post<ApiResponse<{
+      text: string;
+      emotion: string;
+      clues_revealed: string[];
+      trust_change: number;
+    }>>(`/scenes/${sceneId}/npc-dialogue`, data),
 };

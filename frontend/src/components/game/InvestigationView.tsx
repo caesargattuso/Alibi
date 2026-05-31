@@ -269,6 +269,7 @@ export function InvestigationView({
         <NPCDialogue
           interactable={dialogueNPC}
           sessionId={sessionId}
+          sceneId={sceneId}
           onClose={handleCloseDialogue}
           onTalkComplete={handleTalkComplete}
         />

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Input, Spin } from "antd";
 import { SendOutlined } from "@ant-design/icons";
 import type { Interactable } from "../../services/scenes";
+import { sceneService } from "../../services/scenes";
 
 interface DialogueMessage {
   id: string;
@@ -13,11 +14,12 @@ interface DialogueMessage {
 interface NPCDialogueProps {
   interactable: Interactable;
   sessionId: number;
+  sceneId: number;
   onClose: () => void;
   onTalkComplete?: (context: string) => void;
 }
 
-export function NPCDialogue({ interactable, onClose, onTalkComplete }: NPCDialogueProps) {
+export function NPCDialogue({ interactable, sessionId, sceneId, onClose, onTalkComplete }: NPCDialogueProps) {
   const [messages, setMessages] = useState<DialogueMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -43,10 +45,11 @@ export function NPCDialogue({ interactable, onClose, onTalkComplete }: NPCDialog
   const handleSendMessage = async () => {
     if (!inputText.trim() || isLoading) return;
 
+    const playerMessageText = inputText.trim();
     const playerMessage: DialogueMessage = {
       id: Date.now().toString(),
       speaker: "player",
-      text: inputText.trim(),
+      text: playerMessageText,
     };
 
     setMessages((prev) => [...prev, playerMessage]);
@@ -54,41 +57,47 @@ export function NPCDialogue({ interactable, onClose, onTalkComplete }: NPCDialog
     setIsLoading(true);
 
     try {
-      // Simulate AI response (will be replaced with real API call)
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Call backend API for NPC dialogue
+      const dialogueHistory = messages.map((msg) => ({
+        speaker: msg.speaker,
+        text: msg.text,
+      }));
 
-      const npcResponse = getNPCResponse(inputText.trim(), interactable);
+      const result = await sceneService.npcDialogue(sceneId, {
+        session_id: sessionId,
+        npc_id: interactable.npc_id || interactable.id,
+        player_message: playerMessageText,
+        dialogue_history: dialogueHistory,
+      });
+
+      const data = result.data.data;
       const npcMessage: DialogueMessage = {
         id: (Date.now() + 1).toString(),
         speaker: "npc",
-        text: npcResponse.text,
-        emotion: npcResponse.emotion,
+        text: data.text,
+        emotion: data.emotion,
       };
 
       setMessages((prev) => [...prev, npcMessage]);
-      setNpcEmotion(npcResponse.emotion);
+      setNpcEmotion(data.emotion);
 
       // Trigger completion callback
       if (onTalkComplete) {
-        onTalkComplete(`与${interactable.name}对话：${inputText.trim()}`);
+        onTalkComplete(`与${interactable.name}对话：${playerMessageText}`);
       }
     } catch (error) {
       console.error("Dialogue error:", error);
+      // Fallback response on error
+      const fallbackMessage: DialogueMessage = {
+        id: (Date.now() + 1).toString(),
+        speaker: "npc",
+        text: "...（对方似乎在思考什么）",
+        emotion: "thinking",
+      };
+      setMessages((prev) => [...prev, fallbackMessage]);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const getNPCResponse = (_playerText: string, _npc: Interactable): { text: string; emotion: string } => {
-    // Simple response logic - will be replaced with AI
-    const responses = [
-      { text: "这确实是个有趣的发现。让我想想...", emotion: "thinking" },
-      { text: "你在说什么？我不明白你的意思。", emotion: "confused" },
-      { text: "哼，这件事我可不能随便告诉你。", emotion: "suspicious" },
-      { text: "啊！你怎么知道这个的？", emotion: "surprised" },
-      { text: "没错，就是这样。你果然很敏锐。", emotion: "happy" },
-    ];
-    return responses[Math.floor(Math.random() * responses.length)];
   };
 
   const getEmotionIcon = (emotion?: string) => {
