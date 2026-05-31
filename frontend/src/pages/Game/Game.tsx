@@ -106,34 +106,6 @@ export default function Game() {
     }
   }, [sessionId, isStreaming]);
 
-  // Typewriter effect for streaming narration
-  const [visibleChars, setVisibleChars] = useState<Record<string, number>>({});
-
-  useEffect(() => {
-    const streamingTurn = turns.find((t) => t.isStreaming);
-    if (!streamingTurn) return;
-
-    const current = visibleChars[streamingTurn.id] || 0;
-    if (current >= streamingTurn.narration.length) return;
-
-    const timer = setInterval(() => {
-      setVisibleChars((prev) => ({
-        ...prev,
-        [streamingTurn.id]: Math.min((prev[streamingTurn.id] || 0) + 2, streamingTurn.narration.length),
-      }));
-    }, 25);
-    return () => clearInterval(timer);
-  }, [turns, visibleChars]);
-
-  // When turn completes, show all chars immediately
-  useEffect(() => {
-    turns.forEach((t) => {
-      if (t.isComplete && visibleChars[t.id] !== t.narration.length) {
-        setVisibleChars((prev) => ({ ...prev, [t.id]: t.narration.length }));
-      }
-    });
-  }, [turns]);
-
   const lastTurn = turns[turns.length - 1];
   const showChoices = lastTurn?.isComplete && lastTurn?.choices.length > 0 && !isStreaming;
 
@@ -204,77 +176,71 @@ export default function Game() {
         )}
 
         {/* Turn history */}
-        {turns.map((turn) => {
-          const chars = visibleChars[turn.id] ?? turn.narration.length;
-          const isCurrentStreaming = turn.isStreaming && chars < turn.narration.length;
-          const displayNarration = turn.narration.slice(0, chars);
+        {turns.map((turn) => (
+          <div key={turn.id} style={{ marginBottom: 24 }}>
+            {/* Player input */}
+            {turn.playerInput && (
+              <div style={{
+                textAlign: "right", marginBottom: 12,
+                padding: "8px 16px", borderRadius: "12px 12px 2px 12px",
+                background: "rgba(255,107,157,0.15)", borderLeft: "3px solid #FF6B9D",
+                color: "#FF6B9D", fontSize: 14, fontWeight: 500,
+              }}>
+                {turn.playerInput}
+              </div>
+            )}
 
-          return (
-            <div key={turn.id} style={{ marginBottom: 24 }}>
-              {/* Player input */}
-              {turn.playerInput && (
-                <div style={{
-                  textAlign: "right", marginBottom: 12,
-                  padding: "8px 16px", borderRadius: "12px 12px 2px 12px",
-                  background: "rgba(255,107,157,0.15)", borderLeft: "3px solid #FF6B9D",
-                  color: "#FF6B9D", fontSize: 14, fontWeight: 500,
-                }}>
-                  {turn.playerInput}
-                </div>
-              )}
+            {/* Narration */}
+            {turn.narration && (
+              <div style={{
+                padding: "16px 20px", borderRadius: 12,
+                background: "rgba(45,52,54,0.9)", color: "#dfe6e9",
+                fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap",
+                border: "1px solid rgba(255,107,157,0.1)",
+              }}>
+                {turn.narration}
+                {turn.isStreaming && (
+                  <span className="typewriter-cursor" style={{
+                    color: "#FF6B9D", fontWeight: 700,
+                    animation: "blink 0.8s infinite",
+                  }}>▌</span>
+                )}
+              </div>
+            )}
 
-              {/* Narration */}
-              {displayNarration && (
-                <div style={{
-                  padding: "16px 20px", borderRadius: 12,
-                  background: "rgba(45,52,54,0.9)", color: "#dfe6e9",
-                  fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap",
-                  border: "1px solid rgba(255,107,157,0.1)",
-                }}>
-                  {displayNarration}
-                  {isCurrentStreaming && (
-                    <span className="typewriter-cursor" style={{
-                      color: "#FF6B9D", fontWeight: 700,
-                      animation: "blink 0.8s infinite",
-                    }}>▌</span>
-                  )}
-                </div>
-              )}
+            {/* Dialogs */}
+            {turn.dialogs.map((d, i) => (
+              <div key={i} style={{
+                marginTop: 8, padding: "10px 16px", borderRadius: 10,
+                background: "rgba(99,110,114,0.7)", color: "#fff",
+                fontSize: 15,
+              }}>
+                <span style={{ color: "#ffeaa7", fontWeight: 600 }}>{d.speaker}</span>
+                {d.emotion && d.emotion !== "neutral" && (
+                  <span style={{
+                    marginLeft: 6, fontSize: 12, padding: "2px 6px", borderRadius: 4,
+                    background: d.emotion === "happy" ? "rgba(0,200,83,0.3)" :
+                      d.emotion === "sad" ? "rgba(255,82,82,0.3)" :
+                      d.emotion === "angry" ? "rgba(255,165,0,0.3)" :
+                      "rgba(116,185,255,0.3)",
+                    color: "#fff",
+                  }}>
+                    {d.emotion}
+                  </span>
+                )}
+                <div style={{ marginTop: 4 }}>{d.text}</div>
+              </div>
+            ))}
 
-              {/* Dialogs */}
-              {turn.dialogs.map((d, i) => (
-                <div key={i} style={{
-                  marginTop: 8, padding: "10px 16px", borderRadius: 10,
-                  background: "rgba(99,110,114,0.7)", color: "#fff",
-                  fontSize: 15,
-                }}>
-                  <span style={{ color: "#ffeaa7", fontWeight: 600 }}>{d.speaker}</span>
-                  {d.emotion && d.emotion !== "neutral" && (
-                    <span style={{
-                      marginLeft: 6, fontSize: 12, padding: "2px 6px", borderRadius: 4,
-                      background: d.emotion === "happy" ? "rgba(0,200,83,0.3)" :
-                        d.emotion === "sad" ? "rgba(255,82,82,0.3)" :
-                        d.emotion === "angry" ? "rgba(255,165,0,0.3)" :
-                        "rgba(116,185,255,0.3)",
-                      color: "#fff",
-                    }}>
-                      {d.emotion}
-                    </span>
-                  )}
-                  <div style={{ marginTop: 4 }}>{d.text}</div>
-                </div>
-              ))}
-
-              {/* Streaming indicator */}
-              {turn.isStreaming && !displayNarration && (
-                <div style={{ textAlign: "center", padding: 16 }}>
-                  <Spin size="small" />
-                  <span style={{ color: "#888", marginLeft: 8 }}>剧情生成中...</span>
-                </div>
-              )}
-            </div>
-          );
-        })}
+            {/* Streaming indicator */}
+            {turn.isStreaming && !turn.narration && (
+              <div style={{ textAlign: "center", padding: 16 }}>
+                <Spin size="small" />
+                <span style={{ color: "#888", marginLeft: 8 }}>剧情生成中...</span>
+              </div>
+            )}
+          </div>
+        ))}
 
         <div ref={dialogEndRef} />
       </div>
