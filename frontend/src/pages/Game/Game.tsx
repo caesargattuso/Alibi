@@ -151,8 +151,8 @@ export default function Game() {
       // Free action -> open investigation view
       if (!sessionId) return;
       gameService.get(Number(sessionId)).then((resp: any) => {
-        const session = resp.data as unknown as Record<string, unknown>;
-        const sceneId = session.current_scene_id as number;
+        const sessionData = resp.data?.data as unknown as Record<string, unknown>;
+        const sceneId = sessionData?.current_scene_id as number;
         if (sceneId) {
           setCurrentSceneId(sceneId);
           setIsInvestigating(true);
