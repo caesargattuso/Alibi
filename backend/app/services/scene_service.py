@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, ValidationError
-from app.models.models import GameSession, Scene
+from app.models.models import GameSession, Scene, InvestigationLog
 
 
 class SceneService:
@@ -65,15 +65,71 @@ class SceneService:
 
         effects = self._calculate_effects(interactable, action_id)
 
+        # Check for investigation-specific data
+        investigation_data = interactable.get("investigation", {})
+        clues_revealed = []
+        detailed_message = None
+
+        if action_id == "examine" and investigation_data:
+            # Check required flags
+            required_flags = investigation_data.get("required_flags", [])
+            can_reveal = all(game_session.story_flags.get(f) for f in required_flags)
+
+            if can_reveal:
+                clue_text = investigation_data.get("clue_text")
+                if clue_text:
+                    detailed_message = clue_text
+                    revealed_flags = investigation_data.get("revealed_flags", [])
+                    clues_revealed = revealed_flags
+                    for flag in revealed_flags:
+                        effects.append({"type": "set_flag", "target": flag, "value": True})
+
+        # Log investigation
+        log = InvestigationLog(
+            session_id=session_id,
+            scene_id=scene_id,
+            interactable_id=interactable_id,
+            action_id=action_id,
+            action_type="investigate" if action_id == "examine" else "talk" if action_id == "talk" else "other",
+            content=detailed_message or self._get_interaction_message(interactable, action_id),
+            clues_revealed=clues_revealed,
+            meta_data={"interactable_name": interactable["name"], "interactable_type": interactable["type"]},
+        )
+        self.db.add(log)
+        await self.db.flush()
+
         return {
             "success": True,
-            "message": self._get_interaction_message(interactable, action_id),
+            "message": detailed_message or self._get_interaction_message(interactable, action_id),
             "effects": effects,
+            "clues_revealed": clues_revealed,
             "ai_trigger": {
                 "should_generate": True,
                 "context": f"玩家对{interactable['name']}执行了{action_id}",
             },
         }
+
+    async def get_investigation_logs(self, session_id: int, scene_id: int | None = None) -> list[dict]:
+        """Get investigation logs for a game session."""
+        from sqlalchemy import select as sa_select
+        stmt = sa_select(InvestigationLog).where(InvestigationLog.session_id == session_id)
+        if scene_id:
+            stmt = stmt.where(InvestigationLog.scene_id == scene_id)
+        stmt = stmt.order_by(InvestigationLog.created_at.desc())
+        result = await self.db.execute(stmt)
+        logs = result.scalars().all()
+        return [
+            {
+                "id": log.id,
+                "interactable_id": log.interactable_id,
+                "action_id": log.action_id,
+                "action_type": log.action_type,
+                "content": log.content,
+                "clues_revealed": log.clues_revealed,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ]
 
     def _check_condition(self, condition: dict, session: GameSession) -> bool:
         cond_type = condition.get("type")
@@ -120,5 +176,10 @@ class SceneService:
             "enter": f"你走向{interactable['name']}...",
             "sit": f"你坐上了{interactable['name']}...",
             "use": f"你使用了{interactable['name']}...",
+            "pick_up": f"你拾起了{interactable['name']}...",
+            "search": f"你搜索了{interactable['name']}...",
         }
         return messages.get(action_id, f"你对{interactable['name']}执行了{action_id}")
+
+
+scene_service = SceneService

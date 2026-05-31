@@ -1,15 +1,39 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import type { Interactable, MapData } from "../../services/scenes";
+import { findPath } from "../../utils/pathfinding";
+
+interface Point {
+  x: number;
+  y: number;
+}
 
 interface SceneMapProps {
   mapData: MapData | null;
   interactables: Interactable[];
+  playerPosition: Point;
+  onPlayerMove?: (x: number, y: number) => void;
   onInteract?: (interactable: Interactable) => void;
-  onMove?: (x: number, y: number) => void;
+  pathColor?: string;
 }
 
-export function SceneMap({ mapData, interactables, onInteract, onMove }: SceneMapProps) {
+export function SceneMap({
+  mapData,
+  interactables,
+  playerPosition,
+  onPlayerMove,
+  onInteract,
+  pathColor = "#FF6B9D",
+}: SceneMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [currentPath, setCurrentPath] = useState<Point[]>([]);
+  const [isMoving, setIsMoving] = useState(false);
+  const animationRef = useRef<number>(0);
+  const playerPosRef = useRef<Point>(playerPosition);
+
+  // Update player position ref when prop changes
+  useEffect(() => {
+    playerPosRef.current = playerPosition;
+  }, [playerPosition]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -55,6 +79,20 @@ export function SceneMap({ mapData, interactables, onInteract, onMove }: SceneMa
       }
     }
 
+    // Path
+    if (currentPath.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(currentPath[0].x, currentPath[0].y);
+      for (let i = 1; i < currentPath.length; i++) {
+        ctx.lineTo(currentPath[i].x, currentPath[i].y);
+      }
+      ctx.strokeStyle = pathColor;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10, 5]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     // Interactable points
     for (const point of interactables) {
       const [x, y] = point.position;
@@ -81,33 +119,127 @@ export function SceneMap({ mapData, interactables, onInteract, onMove }: SceneMa
       ctx.fillStyle = "#e17055";
       ctx.fill();
     }
-  }, [mapData, interactables]);
+
+    // Player character
+    const player = playerPosRef.current;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 12, 0, Math.PI * 2);
+    ctx.fillStyle = "#FF6B9D";
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Player direction indicator
+    ctx.beginPath();
+    ctx.moveTo(player.x, player.y - 12);
+    ctx.lineTo(player.x - 6, player.y + 6);
+    ctx.lineTo(player.x + 6, player.y + 6);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.fill();
+  }, [mapData, interactables, currentPath, pathColor]);
 
   useEffect(() => {
     draw();
   }, [draw]);
 
+  // Animation loop for player movement
+  useEffect(() => {
+    if (!isMoving || currentPath.length < 2) return;
+
+    let pathIndex = 0;
+    const speed = 200; // pixels per second
+    let lastTime = performance.now();
+
+    const animate = (time: number) => {
+      const deltaTime = (time - lastTime) / 1000;
+      lastTime = time;
+
+      if (pathIndex >= currentPath.length - 1) {
+        setIsMoving(false);
+        setCurrentPath([]);
+        return;
+      }
+
+      const target = currentPath[pathIndex + 1];
+      const current = playerPosRef.current;
+      const dx = target.x - current.x;
+      const dy = target.y - current.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const moveDist = speed * deltaTime;
+
+      if (moveDist >= dist) {
+        playerPosRef.current = { ...target };
+        pathIndex++;
+        if (pathIndex >= currentPath.length - 1) {
+          setIsMoving(false);
+          setCurrentPath([]);
+          onPlayerMove?.(target.x, target.y);
+          return;
+        }
+      } else {
+        const ratio = moveDist / dist;
+        playerPosRef.current = {
+          x: current.x + dx * ratio,
+          y: current.y + dy * ratio,
+        };
+      }
+
+      draw();
+      animationRef.current = requestAnimationFrame(animate);
+    };
+
+    animationRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [isMoving, currentPath, draw, onPlayerMove]);
+
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isMoving) return;
+
     const canvas = canvasRef.current;
     if (!canvas || !mapData) return;
 
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
+    const x = Math.round((e.clientX - rect.left) * scaleX);
+    const y = Math.round((e.clientY - rect.top) * scaleY);
 
     // Check if clicked on an interactable
     for (const point of interactables) {
       const [px, py] = point.position;
       const dist = Math.sqrt((x - px) ** 2 + (y - py) ** 2);
-      if (dist < 20) {
+      if (dist < 30) {
         onInteract?.(point);
         return;
       }
     }
 
-    onMove?.(Math.round(x), Math.round(y));
+    // Calculate path using A*
+    const start = { x: Math.round(playerPosRef.current.x), y: Math.round(playerPosRef.current.y) };
+    const end = { x, y };
+
+    // Simple walkability check - check if point is in any walkable area
+    const isWalkable = (px: number, py: number) => {
+      // Check if in any walkable area
+      for (const area of mapData.walkable_areas) {
+        const polygon = area.polygon;
+        if (pointInPolygon(px, py, polygon)) return true;
+      }
+      return false;
+    };
+
+    const path = findPath(start, end, isWalkable, mapData.width, mapData.height);
+    if (path.length > 1) {
+      setCurrentPath(path);
+      setIsMoving(true);
+    }
   };
 
   return (
@@ -115,7 +247,20 @@ export function SceneMap({ mapData, interactables, onInteract, onMove }: SceneMa
       ref={canvasRef}
       onClick={handleClick}
       className="w-full cursor-pointer"
-      style={{ maxHeight: "50vh", objectFit: "contain" }}
+      style={{ maxHeight: "60vh", objectFit: "contain" }}
     />
   );
+}
+
+// Helper function: point in polygon (ray casting)
+function pointInPolygon(x: number, y: number, polygon: number[][]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1];
+    const xj = polygon[j][0], yj = polygon[j][1];
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }

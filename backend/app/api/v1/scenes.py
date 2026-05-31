@@ -54,3 +54,16 @@ async def execute_interaction(
         scene_id, request.session_id, request.interactable_id, request.action_id
     )
     return {"code": 200, "data": result}
+
+
+@router.get("/{session_id}/investigation-logs")
+async def get_investigation_logs(
+    session_id: int,
+    scene_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """Get investigation logs for a game session."""
+    svc = SceneService(db)
+    logs = await svc.get_investigation_logs(session_id, scene_id)
+    return {"code": 200, "data": {"logs": logs}}

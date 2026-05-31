@@ -148,6 +148,21 @@ class DialogLog(Base):
     session = relationship("GameSession", back_populates="dialogs")
 
 
+class InvestigationLog(Base):
+    __tablename__ = "investigation_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id", ondelete="CASCADE"), nullable=False)
+    scene_id: Mapped[int | None] = mapped_column(ForeignKey("scenes.id"))
+    interactable_id: Mapped[str | None] = mapped_column(String(100))
+    action_id: Mapped[str | None] = mapped_column(String(50))
+    action_type: Mapped[str | None] = mapped_column(String(20))  # "investigate", "talk", "move"
+    content: Mapped[str | None] = mapped_column(Text)
+    clues_revealed: Mapped[list[str] | None] = mapped_column(ARRAY(String(200)))
+    meta_data: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class ScriptFavorite(Base):
     __tablename__ = "script_favorites"
 

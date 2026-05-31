@@ -99,6 +99,7 @@ export interface InteractResult {
   success: boolean;
   message: string;
   effects: Effect[];
+  clues_revealed?: string[];
   ai_trigger: {
     should_generate: boolean;
     context: string;

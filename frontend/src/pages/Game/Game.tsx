@@ -4,6 +4,7 @@ import { Button, Input, Spin } from "antd";
 import { gameService } from "../../services/games";
 import { useGameStore } from "../../stores/gameStore";
 import type { ChoiceItem, StatChange } from "../../stores/gameStore";
+import { InvestigationView } from "../../components/game/InvestigationView";
 
 export default function Game() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -17,6 +18,8 @@ export default function Game() {
   const [customInput, setCustomInput] = useState("");
   const [sceneTransition, setSceneTransition] = useState(false);
   const [statNotifications, setStatNotifications] = useState<StatChange[]>([]);
+  const [isInvestigating, setIsInvestigating] = useState(false);
+  const [currentSceneId, setCurrentSceneId] = useState<number | null>(null);
   const dialogEndRef = useRef<HTMLDivElement>(null);
 
   // Load history on mount
@@ -136,6 +139,25 @@ export default function Game() {
       });
     }
   }, [sessionId, isStreaming]);
+
+  const handleInvestigationComplete = useCallback((context: string) => {
+    // Close investigation view and trigger AI with investigation context
+    setIsInvestigating(false);
+    handleAction(`调查发现：${context}`);
+  }, [handleAction]);
+
+  const startInvestigation = useCallback(() => {
+    // Get current scene ID from game session
+    if (!sessionId) return;
+    gameService.get(Number(sessionId)).then((resp: any) => {
+      const session = resp.data as unknown as Record<string, unknown>;
+      const sceneId = session.current_scene_id as number;
+      if (sceneId) {
+        setCurrentSceneId(sceneId);
+        setIsInvestigating(true);
+      }
+    }).catch(() => {});
+  }, [sessionId]);
 
   const lastTurn = turns[turns.length - 1];
   const showChoices = lastTurn?.isComplete && lastTurn?.choices.length > 0 && !isStreaming;
@@ -298,8 +320,29 @@ export default function Game() {
               style={{ borderRadius: 8, minWidth: 60 }}>
               发送
             </Button>
+            <Button
+              onClick={startInvestigation}
+              style={{
+                borderRadius: 8,
+                background: "rgba(255, 107, 157, 0.2)",
+                borderColor: "rgba(255, 107, 157, 0.5)",
+                color: "#FF6B9D",
+              }}
+            >
+              🔍 调查
+            </Button>
           </div>
         </div>
+      )}
+
+      {/* Investigation View */}
+      {isInvestigating && currentSceneId && (
+        <InvestigationView
+          sessionId={Number(sessionId)}
+          sceneId={currentSceneId}
+          onClose={() => setIsInvestigating(false)}
+          onInvestigationComplete={handleInvestigationComplete}
+        />
       )}
     </div>
   );
