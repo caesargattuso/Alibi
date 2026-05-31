@@ -146,18 +146,22 @@ export default function Game() {
     handleAction(`调查发现：${context}`);
   }, [handleAction]);
 
-  const startInvestigation = useCallback(() => {
-    // Get current scene ID from game session
-    if (!sessionId) return;
-    gameService.get(Number(sessionId)).then((resp: any) => {
-      const session = resp.data as unknown as Record<string, unknown>;
-      const sceneId = session.current_scene_id as number;
-      if (sceneId) {
-        setCurrentSceneId(sceneId);
-        setIsInvestigating(true);
-      }
-    }).catch(() => {});
-  }, [sessionId]);
+  const handleChoiceClick = useCallback((choice: ChoiceItem) => {
+    if (choice.is_custom) {
+      // Free action -> open investigation view
+      if (!sessionId) return;
+      gameService.get(Number(sessionId)).then((resp: any) => {
+        const session = resp.data as unknown as Record<string, unknown>;
+        const sceneId = session.current_scene_id as number;
+        if (sceneId) {
+          setCurrentSceneId(sceneId);
+          setIsInvestigating(true);
+        }
+      }).catch(() => {});
+    } else {
+      handleAction(choice.text);
+    }
+  }, [sessionId, handleAction]);
 
   const lastTurn = turns[turns.length - 1];
   const showChoices = lastTurn?.isComplete && lastTurn?.choices.length > 0 && !isStreaming;
@@ -294,12 +298,12 @@ export default function Game() {
                   cursor: "pointer", transition: "all 0.2s",
                   animation: `fadeIn 0.3s ease-out ${i * 0.1}s both`,
                 }}
-                onClick={() => handleAction(choice.text)}
+                onClick={() => handleChoiceClick(choice)}
               >
                 <span style={{ color: "#FF6B9D", fontWeight: 700, marginRight: 8 }}>
-                  {choice.is_custom ? "✦" : `▸`}
+                  {choice.is_custom ? "🔍" : `▸`}
                 </span>
-                {choice.text}
+                {choice.is_custom ? "调查" : choice.text}
               </button>
             ))}
           </div>
@@ -319,17 +323,6 @@ export default function Game() {
             <Button type="primary" onClick={() => { if (customInput.trim()) handleAction(customInput); }}
               style={{ borderRadius: 8, minWidth: 60 }}>
               发送
-            </Button>
-            <Button
-              onClick={startInvestigation}
-              style={{
-                borderRadius: 8,
-                background: "rgba(255, 107, 157, 0.2)",
-                borderColor: "rgba(255, 107, 157, 0.5)",
-                color: "#FF6B9D",
-              }}
-            >
-              🔍 调查
             </Button>
           </div>
         </div>
