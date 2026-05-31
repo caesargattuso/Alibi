@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { sceneService, type Interactable, type MapData } from "../../services/scenes";
 import { PhaserGameCanvas } from "./PhaserGameCanvas";
 import { InteractionMenu } from "./InteractionMenu";
+import { NPCDialogue } from "./NPCDialogue";
 
 interface Point {
   x: number;
@@ -25,6 +26,7 @@ export function InvestigationView({
   const [interactables, setInteractables] = useState<Interactable[]>([]);
   const [playerPosition, setPlayerPosition] = useState<Point>({ x: 960, y: 800 });
   const [selectedInteractable, setSelectedInteractable] = useState<Interactable | null>(null);
+  const [dialogueNPC, setDialogueNPC] = useState<Interactable | null>(null);
   const [investigationLog, setInvestigationLog] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +66,12 @@ export function InvestigationView({
   }, []);
 
   const handleInteract = useCallback((interactable: Interactable) => {
-    setSelectedInteractable(interactable);
+    // For NPCs, open dialogue directly
+    if (interactable.type === "npc") {
+      setDialogueNPC(interactable);
+    } else {
+      setSelectedInteractable(interactable);
+    }
   }, []);
 
   const handleAction = async (actionId: string) => {
@@ -102,6 +109,14 @@ export function InvestigationView({
 
   const handleCloseMenu = () => {
     setSelectedInteractable(null);
+  };
+
+  const handleCloseDialogue = () => {
+    setDialogueNPC(null);
+  };
+
+  const handleTalkComplete = (context: string) => {
+    setInvestigationLog((prev) => [...prev, context]);
   };
 
   if (isLoading) {
@@ -246,6 +261,16 @@ export function InvestigationView({
           interactable={selectedInteractable}
           onAction={handleAction}
           onClose={handleCloseMenu}
+        />
+      )}
+
+      {/* NPC Dialogue */}
+      {dialogueNPC && (
+        <NPCDialogue
+          interactable={dialogueNPC}
+          sessionId={sessionId}
+          onClose={handleCloseDialogue}
+          onTalkComplete={handleTalkComplete}
         />
       )}
     </div>
