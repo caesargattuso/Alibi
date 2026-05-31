@@ -56,54 +56,85 @@ export default function Game() {
     setTimeout(() => setStatNotifications([]), 2500);
   }, []);
 
-  // Streaming action handler
+  // Streaming action handler with typewriter effect
   const handleAction = useCallback(async (input: string) => {
     if (!sessionId || isStreaming) return;
     const turnId = addPlayerTurn(input);
     setCustomInput("");
 
+    const chunkQueue: string[] = [];
+    let completeData: Record<string, unknown> | null = null;
+    let processing = true;
+
+    // Process chunks with typewriter effect
+    const processChunks = async () => {
+      while (processing || chunkQueue.length > 0) {
+        if (chunkQueue.length > 0) {
+          const chunk = chunkQueue.shift()!;
+          appendNarration(turnId, chunk);
+          // Delay between chunks for typing effect
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        } else {
+          // Wait for more chunks
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      }
+      // All chunks processed, now complete the turn
+      if (completeData) {
+        const data = completeData;
+        const response = {
+          narration: (data.narration as string) || "",
+          dialogs: (data.dialogs as DialogItem[]) || [],
+          choices: (data.choices as ChoiceItem[]) || [],
+          sceneChange: (data.scene_change as { to_scene_id: string; transition: string } | null) || null,
+          statChanges: (data.stat_changes as StatChange[]) || [],
+        };
+        completeTurn(turnId, response);
+
+        if (response.sceneChange) {
+          setSceneTransition(true);
+          setTimeout(() => setSceneTransition(false), 1200);
+        }
+        if (response.statChanges.length > 0) {
+          showStatNotification(response.statChanges);
+        }
+      }
+    };
+
+    // Start processing chunks
+    const processPromise = processChunks();
+
     try {
       for await (const event of gameService.sendActionStream(Number(sessionId), { message: input })) {
         if (event.event === "narration_chunk") {
           const data = event.data as { text: string };
-          appendNarration(turnId, data.text || "");
+          chunkQueue.push(data.text || "");
         } else if (event.event === "complete") {
-          const data = event.data as Record<string, unknown>;
-          const response = {
-            narration: (data.narration as string) || "",
-            dialogs: (data.dialogs as DialogItem[]) || [],
-            choices: (data.choices as ChoiceItem[]) || [],
-            sceneChange: (data.scene_change as { to_scene_id: string; transition: string } | null) || null,
-            statChanges: (data.stat_changes as StatChange[]) || [],
-          };
-          completeTurn(turnId, response);
-
-          if (response.sceneChange) {
-            setSceneTransition(true);
-            setTimeout(() => setSceneTransition(false), 1200);
-          }
-          if (response.statChanges.length > 0) {
-            showStatNotification(response.statChanges);
-          }
+          completeData = event.data as Record<string, unknown>;
+          processing = false;
         } else if (event.event === "error") {
-          completeTurn(turnId, {
+          processing = false;
+          completeData = {
             narration: "连接出现问题，请重试...",
             dialogs: [],
             choices: [{ id: "retry", text: "再试一次", is_custom: false }],
-            sceneChange: null,
-            statChanges: [],
-          });
+            scene_change: null,
+            stat_changes: [],
+          };
         }
       }
     } catch {
-      completeTurn(turnId, {
+      processing = false;
+      completeData = {
         narration: "操作失败，请重试。",
         dialogs: [],
         choices: [{ id: "retry", text: "再试一次", is_custom: false }],
-        sceneChange: null,
-        statChanges: [],
-      });
+        scene_change: null,
+        stat_changes: [],
+      };
     }
+
+    await processPromise;
   }, [sessionId, isStreaming]);
 
   const lastTurn = turns[turns.length - 1];
