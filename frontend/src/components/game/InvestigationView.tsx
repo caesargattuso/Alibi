@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { sceneService, type Interactable, type MapData } from "../../services/scenes";
-import { SceneMap } from "./SceneMap";
+import { PhaserGameCanvas } from "./PhaserGameCanvas";
 import { InteractionMenu } from "./InteractionMenu";
 
 interface Point {
@@ -195,9 +195,9 @@ export function InvestigationView({
 
       {/* Map and Log */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        {/* Map */}
-        <div style={{ flex: 2, padding: 16, overflow: "auto" }}>
-          <SceneMap
+        {/* Phaser Game Canvas */}
+        <div style={{ flex: 2, position: "relative" }}>
+          <PhaserGameCanvas
             mapData={mapData}
             interactables={interactables}
             playerPosition={playerPosition}
