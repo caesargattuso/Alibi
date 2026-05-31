@@ -27,6 +27,7 @@ export function InvestigationView({
   const [selectedInteractable, setSelectedInteractable] = useState<Interactable | null>(null);
   const [investigationLog, setInvestigationLog] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSceneData();
@@ -35,6 +36,7 @@ export function InvestigationView({
   const loadSceneData = async () => {
     try {
       setIsLoading(true);
+      setError(null);
       const [mapRes, interactablesRes] = await Promise.all([
         sceneService.getMap(sceneId),
         sceneService.getInteractables(sceneId),
@@ -51,6 +53,7 @@ export function InvestigationView({
       }
     } catch (error) {
       console.error("Failed to load scene data:", error);
+      setError("加载场景数据失败，请重试。");
     } finally {
       setIsLoading(false);
     }
@@ -115,6 +118,39 @@ export function InvestigationView({
         }}
       >
         <div style={{ color: "#FF6B9D", fontSize: 16 }}>加载场景中...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "#1a1a2e",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 100,
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <div style={{ color: "#FF6B9D", fontSize: 16, marginBottom: 16 }}>{error}</div>
+          <button
+            onClick={loadSceneData}
+            style={{
+              padding: "10px 20px",
+              borderRadius: 8,
+              background: "rgba(255, 107, 157, 0.15)",
+              border: "1px solid rgba(255, 107, 157, 0.3)",
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            重试
+          </button>
+        </div>
       </div>
     );
   }
