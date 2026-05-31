@@ -140,7 +140,7 @@ class DialogLog(Base):
     character_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id"))
     type: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    metadata: Mapped[dict | None] = mapped_column(JSONB)
+    meta_data: Mapped[dict | None] = mapped_column("metadata", JSONB)
     player_input: Mapped[str | None] = mapped_column(Text)
     ai_raw_response: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

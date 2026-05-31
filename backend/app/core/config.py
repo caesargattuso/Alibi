@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     AI_TIMEOUT: int = 60
     AI_MAX_RETRIES: int = 3
     AI_MAX_CONCURRENCY: int = 10
+    SILICONFLOW_IMAGE_MODEL: str = "stabilityai/stable-diffusion-3-5-large"
 
     # JWT
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60

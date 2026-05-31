@@ -52,13 +52,11 @@ class GameService:
         history = await self._get_dialog_history(session_id, limit=5)
         input_text = player_input or "继续"
 
-        # Eager load script and scene for prompt building
-        if not session.script:
-            session.script = await self.db.get(Script, session.script_id)
-        if not session.current_scene and session.current_scene_id:
-            session.current_scene = await self.db.get(Scene, session.current_scene_id)
+        # Load script and scene for prompt building
+        script = await self.db.get(Script, session.script_id)
+        current_scene = await self.db.get(Scene, session.current_scene_id) if session.current_scene_id else None
 
-        ai_response = await ai_service.generate_story(session, input_text, history)
+        ai_response = await ai_service.generate_story(session, script, current_scene, input_text, history)
         await self._update_game_state(session, ai_response)
         await self._save_dialog_log(session_id, input_text, ai_response)
 
@@ -84,6 +82,11 @@ class GameService:
         session.completed_at = datetime.now(timezone.utc)
         await self.db.flush()
         return session
+
+    async def save_action_result(self, session: GameSession, player_input: str, ai_response: dict) -> None:
+        """Save AI response result without calling AI again (used after streaming)."""
+        await self._update_game_state(session, ai_response)
+        await self._save_dialog_log(session.id, player_input, ai_response)
 
     async def _get_dialog_history(self, session_id: int, limit: int = 5) -> list[dict]:
         stmt = (
@@ -131,7 +134,7 @@ class GameService:
             content=ai_response.get("narration", ""),
             player_input=player_input,
             ai_raw_response=json.dumps(ai_response, ensure_ascii=False),
-            metadata={
+            meta_data={
                 "choices": ai_response.get("choices", []),
                 "dialogs": ai_response.get("dialogs", []),
             },
@@ -215,7 +218,7 @@ class GameService:
                 "id": log.id,
                 "type": log.type,
                 "content": log.content,
-                "metadata": log.metadata,
+                "metadata": log.meta_data,
                 "player_input": log.player_input,
                 "created_at": log.created_at.isoformat() if log.created_at else None,
             }

@@ -1,5 +1,6 @@
 import asyncio
 import json
+from collections.abc import AsyncGenerator
 
 from openai import AsyncOpenAI
 
@@ -126,9 +127,9 @@ class AIService:
         )
         self.semaphore = asyncio.Semaphore(settings.AI_MAX_CONCURRENCY)
 
-    async def generate_story(self, session, player_input: str, history: list[dict]) -> dict:
+    async def generate_story(self, session, script, current_scene, player_input: str, history: list[dict]) -> dict:
         player_input = self._sanitize_input(player_input[:500])
-        prompt = self._build_prompt(session, player_input, history)
+        prompt = self._build_prompt(session, script, current_scene, player_input, history)
 
         async with self.semaphore:
             try:
@@ -147,6 +148,100 @@ class AIService:
             except AIServiceError:
                 return self._get_fallback_response()
 
+    async def generate_story_stream(
+        self, session, script, current_scene, player_input: str, history: list[dict]
+    ) -> AsyncGenerator[tuple[str, dict], None]:
+        """Stream AI story response. Yields (event_type, data) tuples.
+
+        Event types:
+        - ("narration_chunk", {"text": "..."}) — partial narration text
+        - ("complete", {...full AI response...}) — complete parsed response
+        """
+        player_input = self._sanitize_input(player_input[:500])
+        prompt = self._build_prompt(session, script, current_scene, player_input, history)
+
+        async with self.semaphore:
+            try:
+                stream = await self._call_stream_with_retry(
+                    model=settings.SILICONFLOW_MODEL,
+                    max_tokens=settings.AI_MAX_TOKENS,
+                    temperature=0.8,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    tools=STORY_TOOLS,
+                    tool_choice={"type": "function", "function": {"name": "generate_story_response"}},
+                    stream=True,
+                )
+
+                buffer = ""
+                async for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    if delta.tool_calls and delta.tool_calls[0].function.arguments:
+                        buffer += delta.tool_calls[0].function.arguments
+                    if delta.content:
+                        buffer += delta.content
+
+                # Parse the complete response
+                parsed = None
+                if buffer:
+                    try:
+                        # Try to find and parse JSON object
+                        start = buffer.find("{")
+                        if start != -1:
+                            json_str = buffer[start:]
+                            # Try various suffixes to complete potentially truncated JSON
+                            for suffix in ["", "}", "}}", '"}']:
+                                try:
+                                    parsed = json.loads(json_str + suffix)
+                                    if "narration" in parsed:
+                                        break
+                                except json.JSONDecodeError:
+                                    continue
+                    except Exception:
+                        pass
+
+                if parsed and "narration" in parsed:
+                    # Simulate streaming by yielding narration in chunks
+                    narration = parsed["narration"]
+                    chunk_size = 10  # Smaller chunks for smoother effect
+                    for i in range(0, len(narration), chunk_size):
+                        chunk_text = narration[i:i + chunk_size]
+                        yield ("narration_chunk", {"text": chunk_text})
+                        # Small delay to create typing effect
+                        await asyncio.sleep(0.04)
+                    yield ("complete", self._fill_defaults(parsed))
+                else:
+                    # Fallback
+                    fallback = self._fallback_text_parse(buffer) if buffer.strip() else self._get_fallback_response()
+                    narration = fallback.get("narration", "")
+                    chunk_size = 10
+                    for i in range(0, len(narration), chunk_size):
+                        yield ("narration_chunk", {"text": narration[i:i + chunk_size]})
+                        await asyncio.sleep(0.04)
+                    yield ("complete", fallback)
+
+            except AIServiceError:
+                fallback = self._get_fallback_response()
+                narration = fallback.get("narration", "")
+                chunk_size = 10
+                for i in range(0, len(narration), chunk_size):
+                    yield ("narration_chunk", {"text": narration[i:i + chunk_size]})
+                    await asyncio.sleep(0.04)
+                yield ("complete", fallback)
+
+    async def _call_stream_with_retry(self, **kwargs):
+        for attempt in range(settings.AI_MAX_RETRIES):
+            try:
+                return await self.client.chat.completions.create(**kwargs)
+            except Exception as e:
+                if attempt == settings.AI_MAX_RETRIES - 1:
+                    raise AIServiceError(f"AI调用失败: {e}")
+                await asyncio.sleep(attempt + 1)
+
     async def _call_with_retry(self, **kwargs):
         for attempt in range(settings.AI_MAX_RETRIES):
             try:
@@ -162,28 +257,50 @@ class AIService:
                     raise AIServiceError(f"AI调用失败: {e}")
                 await asyncio.sleep(attempt + 1)
 
+    async def generate_image(self, prompt: str, size: str = "1024x576") -> str | None:
+        async with self.semaphore:
+            try:
+                response = await asyncio.wait_for(
+                    self.client.images.generate(
+                        model=settings.SILICONFLOW_IMAGE_MODEL,
+                        prompt=prompt,
+                        size=size,
+                        n=1,
+                    ),
+                    timeout=60,
+                )
+                return response.data[0].url
+            except Exception:
+                return None
+
     def _parse_tool_response(self, response) -> dict:
         message = response.choices[0].message
 
-        # Prefer tool_use
         if message.tool_calls and len(message.tool_calls) > 0:
             tool_call = message.tool_calls[0]
             try:
-                return json.loads(tool_call.function.arguments)
+                return self._fill_defaults(json.loads(tool_call.function.arguments))
             except json.JSONDecodeError:
                 pass
 
-        # Fallback: try to parse content as JSON
         content = message.content or ""
         if content.strip():
             return self._fallback_text_parse(content)
 
         return self._get_fallback_response()
 
-    def _build_prompt(self, session, player_input: str, history: list[dict]) -> str:
-        script = session.script if hasattr(session, "script") and session.script else None
-        scene = session.current_scene if hasattr(session, "current_scene") and session.current_scene else None
+    def _fill_defaults(self, parsed: dict) -> dict:
+        defaults = {
+            "dialogs": [], "choices": [{"id": "free", "text": "自由行动", "is_custom": True}],
+            "scene_change": None, "stat_changes": [], "flags_set": [],
+            "is_game_over": False, "ending": None,
+        }
+        for key, val in defaults.items():
+            if key not in parsed:
+                parsed[key] = val
+        return parsed
 
+    def _build_prompt(self, session, script, current_scene, player_input: str, history: list[dict]) -> str:
         script_info = ""
         if script:
             script_info = f"""【剧本信息】
@@ -193,10 +310,10 @@ class AIService:
 当前阶段：{session.game_phase or '开场'}"""
 
         scene_info = ""
-        if scene:
+        if current_scene:
             scene_info = f"""【当前场景】
-场景名称：{scene.name}
-场景描述：{scene.description or ''}
+场景名称：{current_scene.name}
+场景描述：{current_scene.description or ''}
 时间：{session.game_time or '第1天 上午'}"""
 
         history_text = "\n".join(f"{h['type']}: {h['content']}" for h in history[-5:]) if history else "无"
@@ -249,15 +366,7 @@ class AIService:
             stripped = "\n".join(lines).strip()
         try:
             result = json.loads(stripped)
-            defaults = {
-                "dialogs": [], "choices": [{"id": "free", "text": "自由行动", "is_custom": True}],
-                "scene_change": None, "stat_changes": [], "flags_set": [],
-                "is_game_over": False, "ending": None,
-            }
-            for key, val in defaults.items():
-                if key not in result:
-                    result[key] = val
-            return result
+            return self._fill_defaults(result)
         except json.JSONDecodeError:
             return {
                 "narration": stripped,

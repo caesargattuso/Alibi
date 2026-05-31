@@ -4,38 +4,26 @@ import { gameService } from "../services/games";
 import { useGameStore } from "../stores/gameStore";
 
 export function useGame(sessionId: number | null) {
-  const narration = useGameStore((s) => s.narration);
-  const dialogs = useGameStore((s) => s.dialogs);
-  const choices = useGameStore((s) => s.choices);
-  const isLoading = useGameStore((s) => s.isLoading);
-  const updateFromAI = useGameStore((s) => s.updateFromAI);
-  const setLoading = useGameStore((s) => s.setLoading);
+  const turns = useGameStore((s) => s.turns);
+  const isStreaming = useGameStore((s) => s.isStreaming);
 
   const sendMessage = useCallback(async (msg: string) => {
     if (!sessionId) return;
-    setLoading(true);
     try {
-      const { data } = await gameService.sendMessage(sessionId, { message: msg });
-      updateFromAI(data.data);
+      await gameService.sendMessage(sessionId, { message: msg });
     } catch {
       message.error("操作失败");
-    } finally {
-      setLoading(false);
     }
-  }, [sessionId, setLoading, updateFromAI]);
+  }, [sessionId]);
 
   const sendChoice = useCallback(async (choiceId: string) => {
     if (!sessionId) return;
-    setLoading(true);
     try {
-      const { data } = await gameService.sendMessage(sessionId, { choice_id: choiceId });
-      updateFromAI(data.data);
+      await gameService.sendMessage(sessionId, { choice_id: choiceId });
     } catch {
       message.error("操作失败");
-    } finally {
-      setLoading(false);
     }
-  }, [sessionId, setLoading, updateFromAI]);
+  }, [sessionId]);
 
   const quit = useCallback(async () => {
     if (!sessionId) return;
@@ -46,5 +34,5 @@ export function useGame(sessionId: number | null) {
     }
   }, [sessionId]);
 
-  return { narration, dialogs, choices, isLoading, sendMessage, sendChoice, quit };
+  return { turns, isStreaming, sendMessage, sendChoice, quit };
 }

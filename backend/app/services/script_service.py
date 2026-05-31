@@ -45,6 +45,7 @@ class ScriptService:
             tags=data.tags,
             cover_image=data.cover_image,
             banner_image=data.banner_image,
+            status=data.status or "draft",
         )
         self.db.add(script)
         await self.db.flush()

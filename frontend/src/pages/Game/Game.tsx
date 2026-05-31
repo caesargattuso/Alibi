@@ -1,112 +1,341 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Typography, Button, Input, Card, Spin, message } from "antd";
+import { Button, Input, Spin } from "antd";
 import { gameService } from "../../services/games";
 import { useGameStore } from "../../stores/gameStore";
-
-const { Paragraph, Title } = Typography;
+import type { ChoiceItem, DialogItem, StatChange } from "../../stores/gameStore";
 
 export default function Game() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  const { narration, dialogs, choices, isLoading, updateFromAI, setLoading } = useGameStore();
+  const {
+    turns, sceneBackground, sceneName, isStreaming,
+    addPlayerTurn, appendNarration, completeTurn,
+    loadHistory, setSceneName, reset,
+  } = useGameStore();
+
   const [customInput, setCustomInput] = useState("");
+  const [sceneTransition, setSceneTransition] = useState(false);
+  const [statNotifications, setStatNotifications] = useState<StatChange[]>([]);
   const dialogEndRef = useRef<HTMLDivElement>(null);
 
+  // Load history on mount
+  useEffect(() => {
+    if (!sessionId) return;
+    const token = localStorage.getItem("access_token");
+    if (!token) { navigate("/login"); return; }
+
+    // Load game session info
+    gameService.get(Number(sessionId)).then((resp: any) => {
+      const session = resp.data as unknown as Record<string, unknown>;
+      setSceneName((session.game_time as string) || "第1天 上午");
+    }).catch(() => navigate("/login"));
+
+    // Load dialog history
+    gameService.getHistory(Number(sessionId)).then((resp: any) => {
+      const items = (resp.data?.data || []) as Array<{
+        player_input: string | null;
+        content: string;
+        meta_data: { choices?: ChoiceItem[]; dialogs?: DialogItem[] } | null;
+        created_at: string | null;
+      }>;
+      if (items.length > 0) loadHistory(items);
+    }).catch(() => {});
+
+    return () => reset();
+  }, [sessionId]);
+
+  // Auto-scroll
   useEffect(() => {
     dialogEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [narration, dialogs]);
+  }, [turns]);
 
-  const handleChoice = async (choiceId: string) => {
+  // Handle stat notifications
+  const showStatNotification = useCallback((changes: StatChange[]) => {
+    setStatNotifications(changes);
+    setTimeout(() => setStatNotifications([]), 2500);
+  }, []);
+
+  // Streaming action handler
+  const handleAction = useCallback(async (input: string) => {
+    if (!sessionId || isStreaming) return;
+    const turnId = addPlayerTurn(input);
+    setCustomInput("");
+
+    try {
+      for await (const event of gameService.sendActionStream(Number(sessionId), { message: input })) {
+        if (event.event === "narration_chunk") {
+          const data = event.data as { text: string };
+          appendNarration(turnId, data.text || "");
+        } else if (event.event === "complete") {
+          const data = event.data as Record<string, unknown>;
+          const response = {
+            narration: (data.narration as string) || "",
+            dialogs: (data.dialogs as DialogItem[]) || [],
+            choices: (data.choices as ChoiceItem[]) || [],
+            sceneChange: (data.scene_change as { to_scene_id: string; transition: string } | null) || null,
+            statChanges: (data.stat_changes as StatChange[]) || [],
+          };
+          completeTurn(turnId, response);
+
+          if (response.sceneChange) {
+            setSceneTransition(true);
+            setTimeout(() => setSceneTransition(false), 1200);
+          }
+          if (response.statChanges.length > 0) {
+            showStatNotification(response.statChanges);
+          }
+        } else if (event.event === "error") {
+          completeTurn(turnId, {
+            narration: "连接出现问题，请重试...",
+            dialogs: [],
+            choices: [{ id: "retry", text: "再试一次", is_custom: false }],
+            sceneChange: null,
+            statChanges: [],
+          });
+        }
+      }
+    } catch {
+      completeTurn(turnId, {
+        narration: "操作失败，请重试。",
+        dialogs: [],
+        choices: [{ id: "retry", text: "再试一次", is_custom: false }],
+        sceneChange: null,
+        statChanges: [],
+      });
+    }
+  }, [sessionId, isStreaming]);
+
+  // Typewriter effect for streaming narration
+  const [visibleChars, setVisibleChars] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const streamingTurn = turns.find((t) => t.isStreaming);
+    if (!streamingTurn) return;
+
+    const current = visibleChars[streamingTurn.id] || 0;
+    if (current >= streamingTurn.narration.length) return;
+
+    const timer = setInterval(() => {
+      setVisibleChars((prev) => ({
+        ...prev,
+        [streamingTurn.id]: Math.min((prev[streamingTurn.id] || 0) + 2, streamingTurn.narration.length),
+      }));
+    }, 25);
+    return () => clearInterval(timer);
+  }, [turns, visibleChars]);
+
+  // When turn completes, show all chars immediately
+  useEffect(() => {
+    turns.forEach((t) => {
+      if (t.isComplete && visibleChars[t.id] !== t.narration.length) {
+        setVisibleChars((prev) => ({ ...prev, [t.id]: t.narration.length }));
+      }
+    });
+  }, [turns]);
+
+  const lastTurn = turns[turns.length - 1];
+  const showChoices = lastTurn?.isComplete && lastTurn?.choices.length > 0 && !isStreaming;
+
+  const endGame = async () => {
     if (!sessionId) return;
-    setLoading(true);
-    try {
-      const { data } = await gameService.sendMessage(Number(sessionId), { choice_id: choiceId });
-      updateFromAI(data.data);
-    } catch {
-      message.error("操作失败");
-    } finally {
-      setLoading(false);
-    }
+    await gameService.end(Number(sessionId), "abandoned");
+    reset();
+    navigate("/");
   };
 
-  const handleCustomInput = async () => {
-    if (!sessionId || !customInput.trim()) return;
-    setLoading(true);
-    try {
-      const { data } = await gameService.sendMessage(Number(sessionId), { message: customInput });
-      updateFromAI(data.data);
-      setCustomInput("");
-    } catch {
-      message.error("操作失败");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const gradientBg = "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)";
+  const bgStyle = sceneBackground
+    ? { backgroundImage: `url(${sceneBackground})`, backgroundSize: "cover", backgroundPosition: "center" }
+    : { background: gradientBg };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#1a1a2e", color: "#fff" }}>
-      {/* 顶部信息栏 */}
-      <div style={{ padding: "8px 16px", background: "#2d3436", display: "flex", justifyContent: "space-between" }}>
-        <Title level={4} style={{ color: "#fff", margin: 0 }}>游戏中</Title>
-        <Button danger onClick={() => { gameService.end(Number(sessionId), "abandoned"); navigate("/"); }}>
-          退出
-        </Button>
-      </div>
+    <div className="game-container" style={{ ...bgStyle, position: "relative", minHeight: "100vh" }}>
+      {/* Scene transition overlay */}
+      {sceneTransition && (
+        <div style={{
+          position: "fixed", inset: 0, background: "black", opacity: 0.8,
+          transition: "opacity 0.6s ease", zIndex: 100, pointerEvents: "none",
+        }} />
+      )}
 
-      {/* 剧情文本区域 */}
-      <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
-        <Card style={{ background: "#2d3436", color: "#fff", border: "none" }}>
-          <Paragraph style={{ color: "#dfe6e9", whiteSpace: "pre-wrap", fontSize: 16, lineHeight: 1.8 }}>
-            {narration || "故事正在展开..."}
-          </Paragraph>
-        </Card>
-
-        {dialogs.map((d, i) => (
-          <Card key={i} size="small" style={{ background: "#636e72", color: "#fff", border: "none", marginTop: 8 }}>
-            <strong style={{ color: "#ffeaa7" }}>{d.speaker}：</strong>
-            <span>{d.text}</span>
-          </Card>
-        ))}
-
-        {isLoading && (
-          <div style={{ textAlign: "center", padding: 16 }}>
-            <Spin tip="剧情生成中..." />
-          </div>
-        )}
-
-        <div ref={dialogEndRef} />
-      </div>
-
-      {/* 选项区域 */}
-      {!isLoading && choices.length > 0 && (
-        <div style={{ padding: "8px 16px", background: "#2d3436" }}>
-          {choices.map((choice) => (
-            <Button
-              key={choice.id}
-              block
-              style={{ marginBottom: 4, textAlign: "left", height: "auto", whiteSpace: "normal" }}
-              onClick={() => handleChoice(choice.id)}
-            >
-              {choice.text}
-            </Button>
+      {/* Stat change notifications */}
+      {statNotifications.length > 0 && (
+        <div style={{ position: "fixed", top: 80, right: 20, zIndex: 50 }}>
+          {statNotifications.map((s, i) => (
+            <div key={i} className="stat-notification" style={{
+              background: s.change > 0 ? "rgba(0,200,83,0.9)" : "rgba(255,82,82,0.9)",
+              color: "#fff", padding: "8px 16px", borderRadius: 8, marginBottom: 4,
+              fontSize: 14, animation: "slideIn 0.3s ease-out",
+            }}>
+              {s.stat}: {s.change > 0 ? "+" : ""}{s.change}
+            </div>
           ))}
         </div>
       )}
 
-      {/* 自由输入区域 */}
-      {!isLoading && (
-        <div style={{ padding: "8px 16px", background: "#2d3436", display: "flex", gap: 8 }}>
-          <Input
-            placeholder="输入你的行动..."
-            value={customInput}
-            onChange={(e) => setCustomInput(e.target.value)}
-            onPressEnter={handleCustomInput}
-            style={{ flex: 1 }}
-          />
-          <Button type="primary" onClick={handleCustomInput}>
-            发送
-          </Button>
+      {/* Top bar */}
+      <div style={{
+        position: "sticky", top: 0, zIndex: 10,
+        background: "rgba(10,10,26,0.85)", backdropFilter: "blur(12px)",
+        padding: "12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center",
+        borderBottom: "1px solid rgba(255,107,157,0.2)",
+      }}>
+        <div style={{ color: "#fff" }}>
+          <span style={{ fontSize: 18, fontWeight: 700, color: "#FF6B9D" }}>{sceneName || "游戏中"}</span>
+        </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <Button danger size="small" onClick={endGame}>退出</Button>
+        </div>
+      </div>
+
+      {/* Dialog history area */}
+      <div style={{
+        flex: 1, overflow: "auto", padding: "16px 20px",
+        background: "rgba(10,10,26,0.7)", backdropFilter: "blur(8px)",
+        minHeight: 0,
+      }}>
+        {/* Empty state */}
+        {turns.length === 0 && !isStreaming && (
+          <div style={{ textAlign: "center", padding: "40px 0", color: "#888" }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🎭</div>
+            <div style={{ fontSize: 16 }}>故事正在展开，输入你的第一步行动...</div>
+          </div>
+        )}
+
+        {/* Turn history */}
+        {turns.map((turn) => {
+          const chars = visibleChars[turn.id] ?? turn.narration.length;
+          const isCurrentStreaming = turn.isStreaming && chars < turn.narration.length;
+          const displayNarration = turn.narration.slice(0, chars);
+
+          return (
+            <div key={turn.id} style={{ marginBottom: 24 }}>
+              {/* Player input */}
+              {turn.playerInput && (
+                <div style={{
+                  textAlign: "right", marginBottom: 12,
+                  padding: "8px 16px", borderRadius: "12px 12px 2px 12px",
+                  background: "rgba(255,107,157,0.15)", borderLeft: "3px solid #FF6B9D",
+                  color: "#FF6B9D", fontSize: 14, fontWeight: 500,
+                }}>
+                  {turn.playerInput}
+                </div>
+              )}
+
+              {/* Narration */}
+              {displayNarration && (
+                <div style={{
+                  padding: "16px 20px", borderRadius: 12,
+                  background: "rgba(45,52,54,0.9)", color: "#dfe6e9",
+                  fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap",
+                  border: "1px solid rgba(255,107,157,0.1)",
+                }}>
+                  {displayNarration}
+                  {isCurrentStreaming && (
+                    <span className="typewriter-cursor" style={{
+                      color: "#FF6B9D", fontWeight: 700,
+                      animation: "blink 0.8s infinite",
+                    }}>▌</span>
+                  )}
+                </div>
+              )}
+
+              {/* Dialogs */}
+              {turn.dialogs.map((d, i) => (
+                <div key={i} style={{
+                  marginTop: 8, padding: "10px 16px", borderRadius: 10,
+                  background: "rgba(99,110,114,0.7)", color: "#fff",
+                  fontSize: 15,
+                }}>
+                  <span style={{ color: "#ffeaa7", fontWeight: 600 }}>{d.speaker}</span>
+                  {d.emotion && d.emotion !== "neutral" && (
+                    <span style={{
+                      marginLeft: 6, fontSize: 12, padding: "2px 6px", borderRadius: 4,
+                      background: d.emotion === "happy" ? "rgba(0,200,83,0.3)" :
+                        d.emotion === "sad" ? "rgba(255,82,82,0.3)" :
+                        d.emotion === "angry" ? "rgba(255,165,0,0.3)" :
+                        "rgba(116,185,255,0.3)",
+                      color: "#fff",
+                    }}>
+                      {d.emotion}
+                    </span>
+                  )}
+                  <div style={{ marginTop: 4 }}>{d.text}</div>
+                </div>
+              ))}
+
+              {/* Streaming indicator */}
+              {turn.isStreaming && !displayNarration && (
+                <div style={{ textAlign: "center", padding: 16 }}>
+                  <Spin size="small" />
+                  <span style={{ color: "#888", marginLeft: 8 }}>剧情生成中...</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div ref={dialogEndRef} />
+      </div>
+
+      {/* Choice panel */}
+      {showChoices && (
+        <div style={{
+          position: "sticky", bottom: 0, zIndex: 10,
+          background: "rgba(10,10,26,0.85)", backdropFilter: "blur(12px)",
+          padding: "12px 20px", borderTop: "1px solid rgba(255,107,157,0.2)",
+        }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {lastTurn.choices.map((choice, i) => (
+              <button
+                key={choice.id}
+                className="choice-btn"
+                style={{
+                  padding: "12px 20px", borderRadius: 10,
+                  background: choice.is_custom ? "rgba(255,107,157,0.08)" : "rgba(255,107,157,0.15)",
+                  border: choice.is_custom ? "1px dashed rgba(255,107,157,0.3)" : "1px solid rgba(255,107,157,0.3)",
+                  color: "#fff", fontSize: 15, textAlign: "left",
+                  cursor: "pointer", transition: "all 0.2s",
+                  animation: `fadeIn 0.3s ease-out ${i * 0.1}s both`,
+                }}
+                onClick={() => handleAction(choice.text)}
+              >
+                <span style={{ color: "#FF6B9D", fontWeight: 700, marginRight: 8 }}>
+                  {choice.is_custom ? "✦" : `▸`}
+                </span>
+                {choice.text}
+              </button>
+            ))}
+          </div>
+
+          {/* Custom input */}
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <Input
+              placeholder="输入你的行动..."
+              value={customInput}
+              onChange={(e) => setCustomInput(e.target.value)}
+              onPressEnter={() => { if (customInput.trim()) handleAction(customInput); }}
+              style={{
+                flex: 1, background: "rgba(0,0,0,0.3)", borderColor: "rgba(255,107,157,0.3)",
+                color: "#fff", borderRadius: 8,
+              }}
+            />
+            <Button type="primary" onClick={() => { if (customInput.trim()) handleAction(customInput); }}
+              style={{ borderRadius: 8, minWidth: 60 }}>
+              发送
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Waiting for first chunk */}
+      {isStreaming && !lastTurn?.narration && (
+        <div style={{
+          position: "sticky", bottom: 60, textAlign: "center",
+          padding: 8, color: "#888", fontSize: 14, zIndex: 5,
+        }}>
+          <Spin size="small" /> 思考中...
         </div>
       )}
     </div>

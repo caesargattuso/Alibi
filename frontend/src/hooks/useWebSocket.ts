@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from "react";
-import { gameWebSocket, WSMessage } from "../services/websocket";
+import { gameWebSocket, type WSMessage } from "../services/websocket";
 import { useAuthStore } from "../stores/authStore";
 
 export function useWebSocket(sessionId: number | null) {
