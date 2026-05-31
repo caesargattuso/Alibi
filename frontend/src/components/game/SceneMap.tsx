@@ -54,7 +54,7 @@ export function SceneMap({
 
     // Walkable areas
     ctx.fillStyle = "rgba(139, 69, 19, 0.2)";
-    for (const area of mapData.walkable_areas) {
+    for (const area of mapData.walkable_areas || []) {
       ctx.beginPath();
       const polygon = area.polygon;
       if (polygon.length > 0) {
@@ -69,7 +69,7 @@ export function SceneMap({
 
     // Obstacles
     ctx.fillStyle = "rgba(100, 100, 100, 0.6)";
-    for (const obs of mapData.obstacles) {
+    for (const obs of mapData.obstacles || []) {
       ctx.beginPath();
       const polygon = obs.polygon;
       if (polygon.length > 0) {
@@ -115,7 +115,7 @@ export function SceneMap({
     }
 
     // Spawn points
-    for (const sp of mapData.spawn_points) {
+    for (const sp of mapData.spawn_points || []) {
       const [x, y] = sp.position;
       ctx.beginPath();
       ctx.arc(x, y, 8, 0, Math.PI * 2);
@@ -230,8 +230,11 @@ export function SceneMap({
 
     // Simple walkability check - check if point is in any walkable area
     const isWalkable = (px: number, py: number) => {
+      // If no walkable areas defined, allow all movement
+      const areas = mapData.walkable_areas || [];
+      if (areas.length === 0) return true;
       // Check if in any walkable area
-      for (const area of mapData.walkable_areas) {
+      for (const area of areas) {
         const polygon = area.polygon;
         if (pointInPolygon(px, py, polygon)) return true;
       }
