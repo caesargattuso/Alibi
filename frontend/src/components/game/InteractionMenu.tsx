@@ -62,9 +62,14 @@ export function InteractionMenu({ interactable, onAction, onClose }: Interaction
             justifyContent: "center",
             margin: "0 auto 12px",
             fontSize: 24,
+            overflow: "hidden",
           }}
         >
-          {interactable.type === "npc" ? "👤" : interactable.type === "exit" ? "🚪" : "📦"}
+          {interactable.icon && interactable.icon.startsWith("/") ? (
+            <img src={interactable.icon} alt={interactable.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            interactable.type === "npc" ? "👤" : interactable.type === "exit" ? "🚪" : "📦"
+          )}
         </div>
         <h3 style={{ color: "#fff", fontSize: 18, fontWeight: 700, margin: 0 }}>
           {interactable.name}
