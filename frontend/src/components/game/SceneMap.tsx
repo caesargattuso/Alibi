@@ -100,13 +100,28 @@ export function SceneMap({
     for (const point of interactables) {
       const [x, y] = point.position;
       const color = point.type === "npc" ? "#74b9ff" : point.type === "exit" ? "#55efc4" : "#ffeaa7";
-      ctx.beginPath();
-      ctx.arc(x, y, 15, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 2;
-      ctx.stroke();
+
+      // If NPC has an icon URL, draw it as an image
+      if (point.type === "npc" && point.icon && point.icon.startsWith("/")) {
+        const img = new Image();
+        img.src = point.icon;
+        // Draw a placeholder circle while image loads
+        ctx.beginPath();
+        ctx.arc(x, y, 15, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, y, 15, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
 
       ctx.fillStyle = "#fff";
       ctx.font = "12px sans-serif";
