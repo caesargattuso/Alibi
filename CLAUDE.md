@@ -114,3 +114,18 @@ Reference docs in `/docs/`:
 - `03-前后端API与技术实现.md`
 - `07-剧本互动功能设计.md`
 - `08-WebSocket与实时通信设计.md`
+
+## Development Workflow
+
+### Feature Development
+
+1. **Write design doc first** in `docs/{NN}-{feature-name}.md` before writing any code
+2. **Implement** the feature based on the design doc
+3. **Commit** with a descriptive message
+
+### Bug Fixes / Refactors
+
+1. **Record in `docs/records.md`** (or create it) with a brief note of what was fixed/refactored and why
+2. **Commit** the code change
+
+This applies to all changes in this repository.
