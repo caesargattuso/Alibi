@@ -26,7 +26,7 @@ const PROXIMITY_THRESHOLD = 150;
 interface InteractableData {
   item: Interactable;
   zone: Phaser.GameObjects.Zone;
-  icon: Phaser.GameObjects.Text;
+  icon: Phaser.GameObjects.Text | Phaser.GameObjects.Sprite;
   label: Phaser.GameObjects.Text;
   glow: Phaser.GameObjects.Graphics;
   indicator: Phaser.GameObjects.Graphics;
@@ -63,8 +63,20 @@ class GameScene extends Phaser.Scene {
   }
 
   preload() {
+    // Load player portrait
     this.load.image("player", "/uploads/characters/player_portrait.png");
     this.load.image("bg-lobby", "/uploads/scenes/lobby_bg.png");
+
+    // Load NPC portraits dynamically from interactables
+    const interactables = this.sceneInteractables || [];
+    interactables.forEach((item) => {
+      if (item.icon && item.icon.startsWith("/")) {
+        const textureKey = `npc_${item.id}`;
+        if (!this.textures.exists(textureKey)) {
+          this.load.image(textureKey, item.icon);
+        }
+      }
+    });
   }
 
   create() {
@@ -196,12 +208,19 @@ class GameScene extends Phaser.Scene {
       // Interaction zone (larger for easier clicking)
       const zone = this.add.zone(x, y, 100, 100).setInteractive({ useHandCursor: true });
 
-      // Icon
-      const iconText = this.getIconForType(item.type);
-      const icon = this.add.text(x, y - 40, iconText, {
-        fontSize: "32px",
-        align: "center",
-      }).setOrigin(0.5);
+      // Icon - use portrait image if available, otherwise emoji
+      let icon: Phaser.GameObjects.Sprite | Phaser.GameObjects.Text;
+      const textureKey = `npc_${item.id}`;
+      if (item.icon && item.icon.startsWith("/") && this.textures.exists(textureKey)) {
+        icon = this.add.sprite(x, y - 30, textureKey);
+        icon.setScale(0.08);
+      } else {
+        const iconText = this.getIconForType(item.type);
+        icon = this.add.text(x, y - 40, iconText, {
+          fontSize: "32px",
+          align: "center",
+        }).setOrigin(0.5);
+      }
 
       // Label
       const label = this.add.text(x, y + 25, item.name, {
@@ -222,7 +241,7 @@ class GameScene extends Phaser.Scene {
       const data: InteractableData = {
         item,
         zone,
-        icon,
+        icon: icon as Phaser.GameObjects.Text,
         label,
         glow,
         indicator,
