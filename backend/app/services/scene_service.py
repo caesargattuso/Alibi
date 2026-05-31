@@ -231,8 +231,9 @@ class SceneService:
 
         # Call AI service for response
         try:
+            from app.core.config import settings
             response = await ai_service.client.chat.completions.create(
-                model=ai_service.model if hasattr(ai_service, 'model') else "gpt-3.5-turbo",
+                model=settings.SILICONFLOW_MODEL,
                 messages=[
                     {"role": "system", "content": npc_context},
                     {"role": "user", "content": player_message},

@@ -66,17 +66,6 @@ class GameScene extends Phaser.Scene {
     // Load player portrait
     this.load.image("player", "/uploads/characters/player_portrait.png");
     this.load.image("bg-lobby", "/uploads/scenes/lobby_bg.png");
-
-    // Load NPC portraits dynamically from interactables
-    const interactables = this.sceneInteractables || [];
-    interactables.forEach((item) => {
-      if (item.icon && item.icon.startsWith("/")) {
-        const textureKey = `npc_${item.id}`;
-        if (!this.textures.exists(textureKey)) {
-          this.load.image(textureKey, item.icon);
-        }
-      }
-    });
   }
 
   create() {
@@ -105,8 +94,8 @@ class GameScene extends Phaser.Scene {
     // Keyboard
     this.cursors = this.input.keyboard!.createCursorKeys();
 
-    // Hotspots
-    this.createHotspots();
+    // Load NPC portraits and create hotspots
+    this.loadNPCPortraitsAndCreateHotspots();
 
     // Click to move
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
@@ -115,6 +104,31 @@ class GameScene extends Phaser.Scene {
 
     // Ambient particles
     this.createAmbientParticles();
+  }
+
+  loadNPCPortraitsAndCreateHotspots() {
+    // Load NPC portrait textures dynamically
+    let pendingLoads = 0;
+    const interactables = this.sceneInteractables || [];
+
+    interactables.forEach((item) => {
+      if (item.icon && item.icon.startsWith("/")) {
+        const textureKey = `npc_${item.id}`;
+        if (!this.textures.exists(textureKey)) {
+          pendingLoads++;
+          this.load.image(textureKey, item.icon);
+        }
+      }
+    });
+
+    if (pendingLoads > 0) {
+      this.load.once("complete", () => {
+        this.createHotspots();
+      });
+      this.load.start();
+    } else {
+      this.createHotspots();
+    }
   }
 
   createPlayer() {
