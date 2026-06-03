@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Row, Col, Card, Typography, Tag, Button } from "antd";
 import { useNavigate } from "react-router-dom";
+import { RobotOutlined } from "@ant-design/icons";
 import { scriptService } from "../../services/scripts";
 import { gameService } from "../../services/games";
 import type { Script } from "../../types";
@@ -70,6 +71,19 @@ export default function Home() {
       </div>
 
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px 40px" }}>
+        {/* Create script button */}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
+          <Button
+            type="primary"
+            icon={<RobotOutlined />}
+            onClick={() => navigate("/scripts/create")}
+            size="large"
+            style={{ background: "linear-gradient(135deg, #FF6B9D, #C850C0)", borderColor: "transparent", borderRadius: 8 }}
+          >
+            AI创作剧本
+          </Button>
+        </div>
+
         {/* Continue playing */}
         {activeGames.length > 0 && (
           <>

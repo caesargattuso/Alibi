@@ -5,6 +5,7 @@ import { ScriptDetail } from "./pages/ScriptDetail";
 import { Game } from "./pages/Game";
 import { Login, Register } from "./pages/Auth";
 import { Profile } from "./pages/Profile";
+import ScriptEditor from "./pages/ScriptEditor";
 import { useAuthStore } from "./stores/authStore";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -27,6 +28,8 @@ function App() {
         <Routes>
           <Route path="/" element={<PrivateRoute><Home /></PrivateRoute>} />
           <Route path="/scripts/:id" element={<PrivateRoute><ScriptDetail /></PrivateRoute>} />
+          <Route path="/scripts/create" element={<PrivateRoute><ScriptEditor /></PrivateRoute>} />
+          <Route path="/scripts/:id/edit" element={<PrivateRoute><ScriptEditor /></PrivateRoute>} />
           <Route path="/game/:sessionId" element={<PrivateRoute><Game /></PrivateRoute>} />
           <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
           <Route path="/login" element={<Login />} />
