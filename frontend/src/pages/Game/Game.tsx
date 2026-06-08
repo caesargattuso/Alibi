@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Button, Input, Spin } from "antd";
+import { Button, Input, Spin, Modal, List, message } from "antd";
+import { SaveOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import { gameService } from "../../services/games";
 import { useGameStore } from "../../stores/gameStore";
 import type { ChoiceItem, StatChange } from "../../stores/gameStore";
@@ -20,6 +21,12 @@ export default function Game() {
   const [statNotifications, setStatNotifications] = useState<StatChange[]>([]);
   const [isInvestigating, setIsInvestigating] = useState(false);
   const [currentSceneId, setCurrentSceneId] = useState<number | null>(null);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [loadModalOpen, setLoadModalOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saves, setSaves] = useState<Array<{ id: number; save_name: string; created_at: string }>>([]);
+  const [loadingSaves, setLoadingSaves] = useState(false);
   const dialogEndRef = useRef<HTMLDivElement>(null);
 
   // Load history on mount
@@ -172,6 +179,58 @@ export default function Game() {
   const lastTurn = turns[turns.length - 1];
   const showChoices = lastTurn?.isComplete && lastTurn?.choices.length > 0 && !isStreaming;
 
+  const handleSave = useCallback(async () => {
+    if (!sessionId || isStreaming) return;
+    setSaving(true);
+    try {
+      const name = saveName || `存档 ${new Date().toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
+      await gameService.save(Number(sessionId), name);
+      message.success("存档成功");
+      setSaveName("");
+      setSaveModalOpen(false);
+    } catch {
+      message.error("存档失败");
+    } finally {
+      setSaving(false);
+    }
+  }, [sessionId, isStreaming, saveName]);
+
+  const handleLoadSaves = useCallback(async () => {
+    if (!sessionId) return;
+    setLoadingSaves(true);
+    try {
+      const resp = await gameService.listSaves(Number(sessionId));
+      const data = resp.data as unknown as Array<{ id: number; save_name: string; created_at: string }>;
+      setSaves(data);
+    } catch {
+      message.error("获取存档列表失败");
+    } finally {
+      setLoadingSaves(false);
+    }
+  }, [sessionId]);
+
+  const handleLoadSave = useCallback(async (saveId: number) => {
+    if (!sessionId) return;
+    try {
+      await gameService.loadSave(Number(sessionId), saveId);
+      message.success("读档成功");
+      setLoadModalOpen(false);
+      reset();
+      // Reload game history after loading
+      gameService.getHistory(Number(sessionId)).then(async (resp: any) => {
+        const items = (resp.data?.data || []) as Array<{
+          player_input: string | null;
+          content: string;
+          meta_data: { choices?: ChoiceItem[] } | null;
+          created_at: string | null;
+        }>;
+        loadHistory(items);
+      });
+    } catch {
+      message.error("读档失败");
+    }
+  }, [sessionId, reset, loadHistory]);
+
   const endGame = async () => {
     if (!sessionId) return;
     await gameService.end(Number(sessionId), "abandoned");
@@ -220,6 +279,22 @@ export default function Game() {
           <span style={{ fontSize: 18, fontWeight: 700, color: "#FF6B9D" }}>{sceneName || "游戏中"}</span>
         </div>
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <Button
+            icon={<SaveOutlined />}
+            size="small"
+            onClick={() => setSaveModalOpen(true)}
+            style={{ borderColor: "rgba(255,107,157,0.5)", color: "#FF6B9D" }}
+          >
+            存档
+          </Button>
+          <Button
+            icon={<FolderOpenOutlined />}
+            size="small"
+            onClick={() => { setLoadModalOpen(true); handleLoadSaves(); }}
+            style={{ borderColor: "rgba(255,107,157,0.5)", color: "#FF6B9D" }}
+          >
+            读档
+          </Button>
           <Button danger size="small" onClick={endGame}>退出</Button>
         </div>
       </div>
@@ -343,6 +418,79 @@ export default function Game() {
           onInvestigationComplete={handleInvestigationComplete}
         />
       )}
+
+      {/* Save Modal */}
+      <Modal
+        title={<span style={{ color: "#fff" }}>保存游戏</span>}
+        open={saveModalOpen}
+        onCancel={() => setSaveModalOpen(false)}
+        onOk={handleSave}
+        confirmLoading={saving}
+        okText="保存"
+        cancelText="取消"
+        style={{ top: 200 }}
+        styles={{
+          body: { background: "#1a1a2e" },
+          header: { background: "#1a1a2e", borderBottom: "1px solid #333" },
+          footer: { background: "#1a1a2e", borderTop: "1px solid #333" },
+        }}
+      >
+        <div style={{ padding: "16px 0" }}>
+          <Input
+            placeholder="输入存档名称（可选）"
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            style={{ background: "#0a0a1a", borderColor: "#333", color: "#fff" }}
+          />
+        </div>
+      </Modal>
+
+      {/* Load Modal */}
+      <Modal
+        title={<span style={{ color: "#fff" }}>读取存档</span>}
+        open={loadModalOpen}
+        onCancel={() => setLoadModalOpen(false)}
+        footer={null}
+        style={{ top: 200 }}
+        styles={{
+          body: { background: "#1a1a2e", padding: 0 },
+          header: { background: "#1a1a2e", borderBottom: "1px solid #333" },
+        }}
+      >
+        <div style={{ padding: 16 }}>
+          {loadingSaves ? (
+            <div style={{ textAlign: "center", padding: 24 }}><Spin /></div>
+          ) : saves.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 24, color: "#666" }}>暂无存档</div>
+          ) : (
+            <List
+              dataSource={saves}
+              renderItem={(save) => (
+                <List.Item
+                  style={{
+                    background: "#0a0a1a",
+                    marginBottom: 8,
+                    borderRadius: 8,
+                    border: "1px solid #333",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => handleLoadSave(save.id)}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", width: "100%", padding: "8px 12px" }}>
+                    <div>
+                      <div style={{ color: "#fff", fontWeight: 500 }}>{save.save_name}</div>
+                      <div style={{ color: "#666", fontSize: 12 }}>
+                        {new Date(save.created_at).toLocaleString("zh-CN")}
+                      </div>
+                    </div>
+                    <FolderOpenOutlined style={{ color: "#FF6B9D", fontSize: 20, alignSelf: "center" }} />
+                  </div>
+                </List.Item>
+              )}
+            />
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

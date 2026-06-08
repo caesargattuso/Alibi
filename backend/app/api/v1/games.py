@@ -1,4 +1,5 @@
 import json as json_lib
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -7,7 +8,7 @@ from starlette.responses import StreamingResponse
 
 from app.api.deps import get_current_user
 from app.db.session import get_db, AsyncSessionLocal
-from app.models.models import DialogLog, GameSession, Scene, Script, User
+from app.models.models import DialogLog, GameSession, GameSave, Scene, Script, User
 from app.schemas.game import GameCreate, GameAction, GameMessage, GameOut, AIResponse
 from app.services.ai_service import ai_service
 from app.services.game_service import GameService
@@ -212,3 +213,139 @@ async def get_messages(
     svc = GameService(db)
     result = await svc.get_dialog_history_paginated(session_id, user.id, page, per_page, type)
     return {"code": 200, "data": result}
+
+
+@router.post("/{session_id}/saves", response_model=dict)
+async def create_save(
+    session_id: int,
+    data: dict,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save current game state."""
+    session = await db.get(GameSession, session_id)
+    if not session or session.user_id != user.id:
+        raise HTTPException(404, "游戏不存在")
+
+    save_name = data.get("save_name", f"存档 {datetime.now(timezone.utc).strftime('%m/%d %H:%M')}")
+
+    # Collect all dialog logs for this session
+    result = await db.execute(
+        select(DialogLog).where(DialogLog.session_id == session_id).order_by(DialogLog.created_at)
+    )
+    dialog_logs = result.scalars().all()
+    dialog_data = [
+        {
+            "id": log.id,
+            "type": log.type,
+            "content": log.content,
+            "player_input": log.player_input,
+            "meta_data": log.meta_data,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+        }
+        for log in dialog_logs
+    ]
+
+    save = GameSave(
+        session_id=session_id,
+        save_name=save_name,
+        save_data={
+            "player_stats": session.player_stats,
+            "npc_states": session.npc_states,
+            "story_flags": session.story_flags,
+            "game_phase": session.game_phase,
+            "game_time": session.game_time,
+            "current_scene_id": session.current_scene_id,
+            "alive_count": session.alive_count,
+            "dialog_logs": dialog_data,
+        },
+    )
+    db.add(save)
+    await db.flush()
+
+    return {
+        "code": 200,
+        "data": {
+            "id": save.id,
+            "save_name": save.save_name,
+            "created_at": save.created_at.isoformat() if save.created_at else None,
+        },
+    }
+
+
+@router.get("/{session_id}/saves", response_model=dict)
+async def list_saves(
+    session_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all saves for a game session."""
+    session = await db.get(GameSession, session_id)
+    if not session or session.user_id != user.id:
+        raise HTTPException(404, "游戏不存在")
+
+    result = await db.execute(
+        select(GameSave)
+        .where(GameSave.session_id == session_id)
+        .order_by(GameSave.created_at.desc())
+    )
+    saves = result.scalars().all()
+
+    return {
+        "code": 200,
+        "data": [
+            {
+                "id": s.id,
+                "save_name": s.save_name,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in saves
+        ],
+    }
+
+
+@router.post("/{session_id}/saves/{save_id}/load", response_model=dict)
+async def load_save(
+    session_id: int,
+    save_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Load a saved game state."""
+    session = await db.get(GameSession, session_id)
+    if not session or session.user_id != user.id:
+        raise HTTPException(404, "游戏不存在")
+
+    save = await db.get(GameSave, save_id)
+    if not save or save.session_id != session_id:
+        raise HTTPException(404, "存档不存在")
+
+    data = save.save_data
+
+    # Restore game session state
+    session.player_stats = data.get("player_stats", {})
+    session.npc_states = data.get("npc_states", {})
+    session.story_flags = data.get("story_flags", {})
+    session.game_phase = data.get("game_phase")
+    session.game_time = data.get("game_time")
+    session.current_scene_id = data.get("current_scene_id")
+    session.alive_count = data.get("alive_count", 0)
+    session.status = "active"
+
+    # Delete dialog logs after the save point and re-create from save data
+    await db.execute(
+        DialogLog.__table__.delete().where(DialogLog.session_id == session_id)
+    )
+    for log_data in data.get("dialog_logs", []):
+        log = DialogLog(
+            session_id=session_id,
+            type=log_data.get("type", "narration"),
+            content=log_data.get("content", ""),
+            player_input=log_data.get("player_input"),
+            meta_data=log_data.get("meta_data"),
+        )
+        db.add(log)
+
+    await db.flush()
+
+    return {"code": 200, "data": GameOut.model_validate(session).model_dump()}

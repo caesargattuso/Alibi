@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { ConfigProvider } from "antd";
+import { ConfigProvider, theme } from "antd";
 import { Home } from "./pages/Home";
 import { ScriptDetail } from "./pages/ScriptDetail";
 import { Game } from "./pages/Game";
@@ -17,10 +17,10 @@ function App() {
   return (
     <ConfigProvider
       theme={{
+        algorithm: theme.darkAlgorithm,
         token: {
           colorPrimary: "#FF6B9D",
           borderRadius: 8,
-          colorBgContainer: "#FFFFFF",
         },
       }}
     >

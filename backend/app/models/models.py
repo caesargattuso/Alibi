@@ -129,6 +129,19 @@ class GameSession(TimestampMixin, Base):
 
     user = relationship("User", back_populates="game_sessions")
     dialogs = relationship("DialogLog", back_populates="session", lazy="noload", cascade="all, delete-orphan")
+    saves = relationship("GameSave", back_populates="session", lazy="noload", cascade="all, delete-orphan")
+
+
+class GameSave(Base):
+    __tablename__ = "game_saves"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id", ondelete="CASCADE"), nullable=False)
+    save_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    save_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    session = relationship("GameSession", back_populates="saves")
 
 
 class DialogLog(Base):

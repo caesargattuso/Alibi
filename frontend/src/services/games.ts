@@ -112,4 +112,13 @@ export const gameService = {
 
   generateImage: (sessionId: number, size?: string) =>
     api.post<ApiResponse<{ url: string; prompt: string }>>(`/games/${sessionId}/generate-image`, null, { params: { size } }),
+
+  save: (sessionId: number, saveName?: string) =>
+    api.post<ApiResponse<{ id: number; save_name: string; created_at: string }>>(`/games/${sessionId}/saves`, { save_name: saveName }),
+
+  listSaves: (sessionId: number) =>
+    api.get<ApiResponse<Array<{ id: number; save_name: string; created_at: string }>>>(`/games/${sessionId}/saves`),
+
+  loadSave: (sessionId: number, saveId: number) =>
+    api.post<ApiResponse<GameSession>>(`/games/${sessionId}/saves/${saveId}/load`),
 };

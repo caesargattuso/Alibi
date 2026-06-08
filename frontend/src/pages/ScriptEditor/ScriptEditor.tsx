@@ -189,7 +189,8 @@ export default function ScriptEditor() {
                     value={scriptData.genre}
                     onChange={(value) => setScriptData({ ...scriptData, genre: value })}
                     options={genres}
-                    style={{ background: "#0a0a1a" }}
+                    popupMatchSelectWidth={false}
+                    dropdownStyle={{ background: "#1a1a2e" }}
                   />
                 </Form.Item>
                 <Form.Item label={<span style={{ color: "#ccc" }}>难度</span>} style={{ flex: 1 }}>
@@ -197,7 +198,8 @@ export default function ScriptEditor() {
                     value={scriptData.difficulty}
                     onChange={(value) => setScriptData({ ...scriptData, difficulty: value })}
                     options={difficulties}
-                    style={{ background: "#0a0a1a" }}
+                    popupMatchSelectWidth={false}
+                    dropdownStyle={{ background: "#1a1a2e" }}
                   />
                 </Form.Item>
               </div>
