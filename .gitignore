@@ -25,17 +25,11 @@ __pycache__/
 .venv/
 venv/
 
-# Environment
-.env
-.env.local
-.env.*.local
 
 # Build
 dist/
 build/
 
-# Uploads
-uploads/
 
 # Claude
 .claude/
