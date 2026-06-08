@@ -29,6 +29,8 @@ export interface DialogTurn {
   statChanges: StatChange[];
   isStreaming: boolean;
   isComplete: boolean;
+  isGameOver: boolean;
+  ending: string | null;
   timestamp: number;
 }
 
@@ -48,6 +50,8 @@ interface GameState {
     sceneChange: DialogTurn["sceneChange"];
     statChanges: StatChange[];
     narration?: string;
+    isGameOver?: boolean;
+    ending?: string | null;
   }) => void;
   loadHistory: (items: Array<{
     player_input: string | null;
@@ -82,6 +86,8 @@ export const useGameStore = create<GameState>((set) => ({
       statChanges: [],
       isStreaming: true,
       isComplete: false,
+      isGameOver: false,
+      ending: null,
       timestamp: Date.now(),
     };
     set((state) => ({
@@ -130,6 +136,8 @@ export const useGameStore = create<GameState>((set) => ({
               statChanges: data.statChanges ?? [],
               isStreaming: false,
               isComplete: true,
+              isGameOver: data.isGameOver ?? false,
+              ending: data.ending ?? null,
             }
           : t
       ),
@@ -148,6 +156,8 @@ export const useGameStore = create<GameState>((set) => ({
       statChanges: [],
       isStreaming: false,
       isComplete: true,
+      isGameOver: false,
+      ending: null,
       timestamp: item.created_at ? new Date(item.created_at).getTime() : Date.now() - (items.length - i) * 60000,
     }));
     set({ turns });

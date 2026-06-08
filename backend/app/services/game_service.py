@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, ForbiddenError
-from app.models.models import GameSession, DialogLog, Script, Scene
+from app.models.models import GameSession, DialogLog, Script, Scene, Character
 from app.services.ai_service import ai_service
 from app.services.script_service import ScriptService
 
@@ -18,6 +18,7 @@ class GameService:
     async def create_game(self, user_id: int, script_id: int, player_name: str) -> GameSession:
         script = await self.script_svc.get_script(script_id)
         opening_scene = await self.script_svc.get_opening_scene(script_id)
+        npc_states = self._init_npc_states(script)
 
         session = GameSession(
             user_id=user_id,
@@ -25,11 +26,11 @@ class GameService:
             current_scene_id=opening_scene.id,
             player_name=player_name,
             player_stats={},
-            npc_states=self._init_npc_states(script),
+            npc_states=npc_states,
             story_flags={},
             game_phase="opening",
             game_time="第1天 上午",
-            alive_count=0,
+            alive_count=sum(1 for s in npc_states.values() if s.get("status") == "alive"),
             status="active",
         )
         self.db.add(session)
@@ -53,7 +54,15 @@ class GameService:
         input_text = player_input or "继续"
 
         # Load script and scene for prompt building
-        script = await self.db.get(Script, session.script_id)
+        stmt = select(Script).where(Script.id == session.script_id)
+        result = await self.db.execute(stmt)
+        script = result.scalar_one_or_none()
+        # Eagerly load characters for AI prompt
+        if script:
+            char_result = await self.db.execute(
+                select(Character).where(Character.script_id == script.id)
+            )
+            script.characters = char_result.scalars().all()
         current_scene = await self.db.get(Scene, session.current_scene_id) if session.current_scene_id else None
 
         ai_response = await ai_service.generate_story(session, script, current_scene, input_text, history)
@@ -107,13 +116,36 @@ class GameService:
                 result = await self.db.execute(stmt)
                 scene = result.scalar_one_or_none()
                 if scene:
-                    session.current_scene_id = scene.id
+                    # Check entry conditions
+                    entry_conditions = scene.entry_conditions
+                    if entry_conditions and entry_conditions.get("type") == "flag":
+                        required_flag = entry_conditions.get("flag")
+                        required_value = entry_conditions.get("value", True)
+                        if session.story_flags.get(required_flag) != required_value:
+                            # Deny entry, set flag so AI knows
+                            session.story_flags["_scene_entry_denied"] = to_scene_key
+                        else:
+                            session.current_scene_id = scene.id
+                            # Process on_enter events
+                            if scene.on_enter:
+                                for flag in scene.on_enter.get("set_flags", []):
+                                    session.story_flags[flag] = True
+                    else:
+                        session.current_scene_id = scene.id
 
         for change in response.get("stat_changes", []):
+            target = change.get("target", "player")
+            target_id = change.get("target_id", "")
             stat = change.get("stat")
             delta = change.get("change", 0)
-            current = session.player_stats.get(stat, 0)
-            session.player_stats[stat] = current + delta
+
+            if target == "npc" and target_id:
+                if target_id in session.npc_states:
+                    npc = session.npc_states[target_id]
+                    npc[stat] = npc.get(stat, 0) + delta
+            else:
+                current = session.player_stats.get(stat, 0)
+                session.player_stats[stat] = current + delta
 
         for flag_item in response.get("flags_set", []):
             flag = flag_item.get("flag") if isinstance(flag_item, dict) else flag_item

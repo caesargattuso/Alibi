@@ -32,7 +32,9 @@ class GameOut(BaseModel):
     game_time: str | None
     alive_count: int
     status: str
+    current_ending: str | None = None
     created_at: datetime | None = None
+    completed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

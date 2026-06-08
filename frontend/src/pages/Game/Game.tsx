@@ -27,6 +27,9 @@ export default function Game() {
   const [saving, setSaving] = useState(false);
   const [saves, setSaves] = useState<Array<{ id: number; save_name: string; created_at: string }>>([]);
   const [loadingSaves, setLoadingSaves] = useState(false);
+  const [isGameOver, setIsGameOver] = useState(false);
+  const [gameEnding, setGameEnding] = useState<string | null>(null);
+  const [scriptId, setScriptId] = useState<string>("");
   const dialogEndRef = useRef<HTMLDivElement>(null);
 
   // Load history on mount
@@ -39,6 +42,12 @@ export default function Game() {
     gameService.get(Number(sessionId)).then((resp: any) => {
       const session = resp.data as unknown as Record<string, unknown>;
       setSceneName((session.game_time as string) || "第1天 上午");
+      setScriptId(String(session.script_id || ""));
+      // Check if game is already over
+      if (session.status === "completed" && session.current_ending) {
+        setIsGameOver(true);
+        setGameEnding(session.current_ending as string);
+      }
     }).catch(() => navigate("/login"));
 
     // Load dialog history — if empty, auto-trigger opening narration
@@ -67,8 +76,14 @@ export default function Game() {
                 choices: (data.choices as ChoiceItem[]) || [],
                 sceneChange: (data.scene_change as { to_scene_id: string; transition: string } | null) || null,
                 statChanges: (data.stat_changes as StatChange[]) || [],
+                isGameOver: (data.is_game_over as boolean) || false,
+                ending: (data.ending as string) || null,
               };
               completeTurn(turnId, response);
+              if (response.isGameOver) {
+                setIsGameOver(true);
+                setGameEnding(response.ending);
+              }
             }
           }
         } catch {
@@ -116,9 +131,15 @@ export default function Game() {
             choices: (data.choices as ChoiceItem[]) || [],
             sceneChange: (data.scene_change as { to_scene_id: string; transition: string } | null) || null,
             statChanges: (data.stat_changes as StatChange[]) || [],
+            isGameOver: (data.is_game_over as boolean) || false,
+            ending: (data.ending as string) || null,
           };
           completeTurn(turnId, response);
 
+          if (response.isGameOver) {
+            setIsGameOver(true);
+            setGameEnding(response.ending);
+          }
           if (response.sceneChange) {
             setSceneTransition(true);
             setTimeout(() => setSceneTransition(false), 1200);
@@ -177,7 +198,7 @@ export default function Game() {
   }, [sessionId, handleAction]);
 
   const lastTurn = turns[turns.length - 1];
-  const showChoices = lastTurn?.isComplete && lastTurn?.choices.length > 0 && !isStreaming;
+  const showChoices = !isGameOver && lastTurn?.isComplete && lastTurn?.choices.length > 0 && !isStreaming;
 
   const handleSave = useCallback(async () => {
     if (!sessionId || isStreaming) return;
@@ -251,6 +272,70 @@ export default function Game() {
           position: "fixed", inset: 0, background: "black", opacity: 0.8,
           transition: "opacity 0.6s ease", zIndex: 100, pointerEvents: "none",
         }} />
+      )}
+
+      {/* Game Over overlay */}
+      {isGameOver && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          background: (gameEnding === "perfect" || gameEnding === "good")
+            ? "rgba(0, 40, 20, 0.95)"
+            : gameEnding === "neutral"
+            ? "rgba(40, 40, 0, 0.95)"
+            : "rgba(40, 0, 0, 0.95)",
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          animation: "fadeIn 1s ease-out",
+        }}>
+          {/* Ending icon */}
+          <div style={{ fontSize: 64, marginBottom: 24 }}>
+            {gameEnding === "perfect" ? "🏆" :
+             gameEnding === "good" ? "✨" :
+             gameEnding === "neutral" ? "🌫️" :
+             gameEnding === "bad" ? "💀" : "⚰️"}
+          </div>
+
+          {/* Ending title */}
+          <div style={{
+            fontSize: 32, fontWeight: 700, marginBottom: 16,
+            color: (gameEnding === "perfect" || gameEnding === "good")
+              ? "#4CAF50"
+              : gameEnding === "neutral"
+              ? "#FFC107"
+              : "#F44336",
+          }}>
+            {gameEnding === "perfect" ? "完美结局" :
+             gameEnding === "good" ? "好结局" :
+             gameEnding === "neutral" ? "普通结局" :
+             gameEnding === "bad" ? "坏结局" : "悲剧结局"}
+          </div>
+
+          {/* Ending description */}
+          <div style={{
+            maxWidth: 600, textAlign: "center",
+            color: "#dfe6e9", fontSize: 16, lineHeight: 1.8,
+            padding: "0 20px", marginBottom: 32,
+          }}>
+            {lastTurn?.narration?.replace(/\\n/g, "\n")}
+          </div>
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 16 }}>
+            <Button type="primary" size="large"
+              onClick={() => { reset(); navigate("/"); }}
+              style={{ borderRadius: 8, minWidth: 120 }}>
+              返回首页
+            </Button>
+            {scriptId && (
+              <Button size="large"
+                onClick={() => { reset(); navigate(`/scripts/${scriptId}`); }}
+                style={{ borderRadius: 8, minWidth: 120,
+                  borderColor: "rgba(255,107,157,0.5)", color: "#FF6B9D" }}>
+                重新开始
+              </Button>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Stat change notifications */}

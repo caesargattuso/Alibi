@@ -116,6 +116,21 @@ SYSTEM_PROMPT = """你是一个专业的互动小说游戏导演，负责创造�
 7. 重视玩家的选择，让选择产生后果
 8. 适时推进剧情，但给玩家探索空间
 
+指控规则：
+9. 当玩家明确指控某个角色是凶手时（使用"指控"、"指认"、"就是他"等关键词），根据游戏规则中的accusation_rules判断：
+   - 如果玩家指控了正确的hidden_boss角色，且拥有足够的证据标记，触发good/perfect结局
+   - 如果玩家指控了错误的角色，触发bad/tragic结局
+   - 指控时设置is_game_over=true，ending设为对应结局名称
+10. 不要主动提示玩家可以指控，但当玩家表现出推理意图时，可以在选项中加入"指控某人"的选项
+11. 角色的秘密只能在其信任度达到阈值后逐步透露，且hidden_boss角色即使信任度很高也会给出误导性信息
+
+结局触发：
+12. 严格按照结局设定中的描述生成结局叙述
+13. 只有在玩家做出关键决定（如指控）或剧情自然发展到终点时才触发game_over
+14. 完美结局需要玩家收集所有关键证据后正确指控
+15. 当玩家指控正确但证据不足时，可以触发good结局而非perfect
+16. 当玩家指控错误时，根据剧情严重程度选择bad或tragic结局
+
 请调用 generate_story_response 函数来生成你的回复。"""
 
 
@@ -336,6 +351,33 @@ class AIService:
 背景：{script.setting.get('world', '') if script.setting else ''}
 当前阶段：{session.game_phase or '开场'}"""
 
+        rules_info = ""
+        if script and script.rules:
+            rules_info = f"""【游戏规则】
+{json.dumps(script.rules, ensure_ascii=False)}"""
+
+        endings_info = ""
+        if script and script.endings:
+            endings_info = f"""【结局设定】
+{json.dumps(script.endings, ensure_ascii=False)}"""
+
+        characters_info = ""
+        if script and hasattr(script, 'characters') and script.characters:
+            char_details = []
+            for char in script.characters:
+                detail = {
+                    "key": char.character_key,
+                    "name": char.name,
+                    "secret": char.secrets.get("secret", "") if char.secrets else "",
+                    "is_hidden_boss": char.secrets.get("is_hidden_boss", False) if char.secrets else False,
+                    "trust_threshold": char.secrets.get("trust_threshold", 0) if char.secrets else 0,
+                }
+                if char.ai_prompt:
+                    detail["ai_prompt"] = char.ai_prompt
+                char_details.append(detail)
+            characters_info = f"""【角色秘密（仅导演可见）】
+{json.dumps(char_details, ensure_ascii=False)}"""
+
         scene_info = ""
         if current_scene:
             scene_info = f"""【当前场景】
@@ -346,6 +388,12 @@ class AIService:
         history_text = "\n".join(f"{h['type']}: {h['content']}" for h in history[-5:]) if history else "无"
 
         return f"""{script_info}
+
+{rules_info}
+
+{endings_info}
+
+{characters_info}
 
 {scene_info}
 
