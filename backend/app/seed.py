@@ -96,6 +96,40 @@ async def seed():
             script.cover_image = cover_url
             print(f"Cover uploaded: {cover_url}")
 
+        # Upload scene background images
+        scene_bg_map = {
+            "lobby": "lobby_bg.png",
+            "library": "library_bg.png",
+            "dining_room": "dining_bg.png",
+            "garden": "garden_bg.png",
+            "kitchen": "kitchen_bg.png",
+            "basement": "basement_bg.png",
+            "study": "study_bg.png",
+        }
+        scene_bg_urls = {}
+        for scene_key, bg_file_name in scene_bg_map.items():
+            bg_file = Path(f"./uploads/scenes/{bg_file_name}")
+            if bg_file.exists():
+                url = await storage.save(f"scripts/{script.id}/scenes/{scene_key}/bg.png", bg_file.read_bytes(), "image/png")
+                scene_bg_urls[scene_key] = url
+                print(f"Scene {scene_key} background uploaded: {url}")
+
+        # Upload character avatars
+        char_avatar_map = {
+            "butler": "butler_avatar.png",
+            "lady_margaret": "lady_margaret_avatar.png",
+            "doctor_holmes": "doctor_holmes_avatar.png",
+            "cook_martha": "cook_avatar.png",
+            "young_master": "young_master_avatar.png",
+        }
+        char_avatar_urls = {}
+        for char_key, avatar_file_name in char_avatar_map.items():
+            avatar_file = Path(f"./uploads/characters/{avatar_file_name}")
+            if avatar_file.exists():
+                url = await storage.save(f"scripts/{script.id}/characters/{char_key}/avatar.png", avatar_file.read_bytes(), "image/png")
+                char_avatar_urls[char_key] = url
+                print(f"Character {char_key} avatar uploaded: {url}")
+
         # Create scenes (7 scenes)
         scenes_data = [
             # Scene 1: Lobby
@@ -103,6 +137,7 @@ async def seed():
                 "scene_key": "lobby",
                 "name": "庄园大厅",
                 "description": "金碧辉煌的大厅中央悬挂着一盏巨大的水晶吊灯，墙壁上挂满了历代庄园主的画像。壁炉中的火焰跳动着，投下诡异的影子。空气中弥漫着陈旧的气息，仿佛时间在这里停滞了。",
+                "background_image": scene_bg_urls.get("lobby", ""),
                 "map_data": {
                     "width": 1920,
                     "height": 1080,
@@ -219,6 +254,7 @@ async def seed():
                 "scene_key": "library",
                 "name": "庄园图书馆",
                 "description": "幽暗的图书馆里弥漫着旧书和皮革的味道。高耸的书架直达天花板，角落里有一张古老的写字台，上面放着一本打开的日记。壁炉旁的扶手椅上似乎还残留着余温。",
+                "background_image": scene_bg_urls.get("library", ""),
                 "map_data": {
                     "width": 1600,
                     "height": 900,
@@ -311,6 +347,7 @@ async def seed():
                 "scene_key": "dining_room",
                 "name": "庄园餐厅",
                 "description": "长长的橡木餐桌上摆放着精美的银质餐具，水晶杯中残留着暗红色的液体。餐厅尽头的门通向厨房，空气中弥漫着一种奇怪的气味——像是某种化学药剂。",
+                "background_image": scene_bg_urls.get("dining_room", ""),
                 "map_data": {
                     "width": 1920,
                     "height": 900,
@@ -400,6 +437,7 @@ async def seed():
                 "scene_key": "garden",
                 "name": "庄园花园",
                 "description": "月光下的花园显得格外阴森。枯萎的玫瑰丛中似乎有什么东西在移动，远处的喷泉早已干涸，但你能听到水滴的声音。花园深处有一扇生锈的铁门，通向庄园的地下室入口。",
+                "background_image": scene_bg_urls.get("garden", ""),
                 "map_data": {
                     "width": 1920,
                     "height": 1080,
@@ -491,6 +529,7 @@ async def seed():
                 "scene_key": "kitchen",
                 "name": "庄园厨房",
                 "description": "弥漫着香料和面粉气味的厨房，铜锅在炉火上发出轻微的咕嘟声。角落里的刀架上少了一把刀，厨师玛莎正在忙碌地准备着什么，时不时紧张地看向门口。",
+                "background_image": scene_bg_urls.get("kitchen", ""),
                 "map_data": {
                     "width": 1200,
                     "height": 800,
@@ -571,6 +610,7 @@ async def seed():
                 "scene_key": "basement",
                 "name": "庄园地下室",
                 "description": "阴暗潮湿的地下室，空气中弥漫着霉味和一种说不出的腐朽气息。摇曳的烛光照亮了角落里堆积的木箱，地面上有拖拽的痕迹。这里隐藏着庄园最黑暗的秘密。",
+                "background_image": scene_bg_urls.get("basement", ""),
                 "map_data": {
                     "width": 1400,
                     "height": 900,
@@ -669,6 +709,7 @@ async def seed():
                 "scene_key": "study",
                 "name": "庄园书房",
                 "description": "勋爵的私人书房，厚重的橡木门半掩着。书桌上散落着未完成的信件，壁炉中还有未燃尽的纸灰。墙上挂着一幅巨大的庄园地图，似乎标注着什么重要的信息。",
+                "background_image": scene_bg_urls.get("study", ""),
                 "map_data": {
                     "width": 1200,
                     "height": 800,
@@ -783,6 +824,7 @@ async def seed():
                 "name": "管家威廉",
                 "display_name": "威廉",
                 "role_type": "npc",
+                "avatar_url": char_avatar_urls.get("butler", ""),
                 "appearance": "身材高大，穿着整洁的黑色燕尾服，银白色的头发梳得一丝不苟。眼神深邃，似乎隐藏着无数秘密。他的双手总是微微颤抖，仿佛在极力控制着什么。",
                 "personality": {"traits": ["沉稳", "神秘", "控制欲强"], "mbti": "ISTJ"},
                 "background": "在庄园服务了40年，见证了庄园的兴衰。表面上忠诚可靠，实际上掌控着庄园地下走私网络。布莱克伍德勋爵发现真相后，他不得不采取'措施'来保护自己的秘密。",
@@ -797,6 +839,7 @@ async def seed():
                 "name": "玛格丽特夫人",
                 "display_name": "玛格丽特",
                 "role_type": "npc",
+                "avatar_url": char_avatar_urls.get("lady_margaret", ""),
                 "appearance": "优雅的中年女性，穿着华丽的黑色晚礼服，颈间戴着璀璨的钻石项链。她的眼神中带着深深的忧郁，似乎背负着沉重的秘密。",
                 "personality": {"traits": ["优雅", "忧郁", "聪慧"], "mbti": "INFJ"},
                 "background": "庄园主人的遗孀，据说她的丈夫在三年前的一个雨夜神秘失踪。她很少离开庄园，整日沉浸在回忆中。她知道丈夫打算离开她，但不知道他已经死了。",
@@ -810,6 +853,7 @@ async def seed():
                 "name": "福尔摩斯医生",
                 "display_name": "医生",
                 "role_type": "npc",
+                "avatar_url": char_avatar_urls.get("doctor_holmes", ""),
                 "appearance": "戴着金丝眼镜的中年男子，总是随身携带一个黑色医疗箱。他的目光锐利，似乎在观察着每一个人。手指修长，动作精准。",
                 "personality": {"traits": ["理性", "观察力强", "有些神经质"], "mbti": "INTP"},
                 "background": "来自伦敦的'医生'，受邀来庄园为玛格丽特夫人看病。实际上他是受雇于勋爵姐姐的私家侦探，来调查勋爵失踪的真相。他的枪和假证件都是为了调查工作。",
@@ -823,6 +867,7 @@ async def seed():
                 "name": "厨师玛莎",
                 "display_name": "玛莎",
                 "role_type": "npc",
+                "avatar_url": char_avatar_urls.get("cook_martha", ""),
                 "appearance": "身材圆润的中年妇女，围着沾满油渍的围裙，脸上总是挂着和善的微笑。但她的眼神中偶尔闪过一丝忧虑，似乎知道一些不该知道的事情。",
                 "personality": {"traits": ["健谈", "善良", "八卦"], "mbti": "ESFJ"},
                 "background": "在庄园工作了20年的厨师，对庄园里发生的一切了如指掌。她喜欢在厨房里八卦，但有些事情她选择沉默——因为她害怕。",
@@ -836,6 +881,7 @@ async def seed():
                 "name": "少爷爱德华",
                 "display_name": "爱德华",
                 "role_type": "npc",
+                "avatar_url": char_avatar_urls.get("young_master", ""),
                 "appearance": "年轻英俊但面容憔悴的男子，穿着略显破旧的西装，手指上有赌场留下的墨迹。他的眼神中带着焦虑和愧疚。",
                 "personality": {"traits": ["急躁", "狡猾", "脆弱"], "mbti": "ESTP"},
                 "background": "布莱克伍德勋爵的独子，因赌博与父亲决裂后离家出走。三年后突然回到庄园，声称是为了'悼念父亲'，但所有人都知道他急需钱来还赌债。然而，勋爵失踪的那晚他确实在伦敦。",
